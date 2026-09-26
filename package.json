@@ -1,0 +1,26 @@
+{
+  "name": "coop-plan",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "合伙有序：多人会签、阶段预算、采购执行与审计留痕",
+  "engines": {
+    "node": ">=22.16.0"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:workers": "wrangler dev --test-scheduled",
+    "test": "node --test --test-concurrency=1 tests/*.test.mjs",
+    "check": "node scripts/check.mjs",
+    "db:local": "wrangler d1 migrations apply DB --local",
+    "db:remote": "wrangler d1 migrations apply DB --remote",
+    "deploy": "node scripts/deploy.mjs",
+    "deploy:check": "wrangler deploy --dry-run",
+    "demo": "node scripts/seed-demo.mjs",
+    "configure:cloudflare": "node scripts/configure-cloudflare.mjs",
+    "fixture:visual": "node scripts/export-demo-fixture.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

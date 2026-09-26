@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "coop-plan",
+  "main": "src/index.js",
+  "compatibility_date": "2025-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true, "not_found_handling": "single-page-application" },
+  "d1_databases": [{ "binding": "DB", "database_name": "coop-plan-db", "database_id": "REPLACE_WITH_YOUR_D1_ID", "migrations_dir": "migrations" }],
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "coop-plan-private" }],
+  "triggers": { "crons": ["*/10 * * * *"] },
+  "vars": { "APP_NAME": "合伙有序", "APP_URL": "https://REPLACE_WITH_YOUR_DOMAIN", "TZ": "Asia/Shanghai" },
+  "observability": { "enabled": true }
+}

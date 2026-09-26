@@ -1,0 +1,10 @@
+# 本地演示专用；正式部署必须重新生成，不要提交真实密钥。
+BOOTSTRAP_TOKEN=local-only-change-this-bootstrap-token
+APP_URL=http://localhost:8787
+# 32 字节随机值的 base64 编码（node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"）
+CONFIG_ENCRYPTION_KEY=
+# 短信可选。实际发送需要已开通的资质、签名和模板；模板变量固定为 project / title。
+ALIYUN_ACCESS_KEY_ID=
+ALIYUN_ACCESS_KEY_SECRET=
+ALIYUN_SMS_SIGN_NAME=
+ALIYUN_SMS_TEMPLATE_CODE=
