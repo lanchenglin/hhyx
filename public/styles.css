@@ -9,3 +9,8 @@
 .ai-json{white-space:pre-wrap;overflow-wrap:anywhere;max-height:460px;overflow:auto;font-size:12px;line-height:1.65;padding:16px;background:#f3f6f5;border-radius:8px;max-width:100%}.ai-finding{padding:16px 0;border-bottom:1px solid #dce4e1;overflow-wrap:anywhere}.ai-finding h4{margin:0 0 10px;font-size:16px}.ai-finding blockquote{border-left:3px solid #899e96;margin:12px 0;padding:10px 16px;background:#f3f6f5}.ai-actions{display:flex;gap:12px;flex-wrap:wrap}.ai-actions p{width:100%}.ai-preview{overflow-wrap:anywhere}.panel-body .buttons{flex-wrap:wrap}.metric small{display:block;color:#53635e}.ai-finding .btn{white-space:normal;word-break:break-word}@media(max-width:640px){.ai-actions .btn{width:100%}.ai-json{font-size:11px;max-height:320px}}
 
 .ai-metrics .metric>span{display:block;font-size:12px;color:#53635e}.ai-metrics .metric>strong{display:block;font-size:22px;line-height:1.35;margin:8px 0;overflow-wrap:anywhere}.ai-metrics .metric>small{font-size:11px}
+
+/* Account-only password visibility: deliberate, touch-friendly, no layout shift. */
+.password-control{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:stretch;min-width:0}
+.password-control>input{min-width:0;width:100%}
+.password-control>.password-toggle{min-width:64px;min-height:44px;padding:8px 12px;white-space:nowrap;align-self:stretch}

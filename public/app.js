@@ -78,8 +78,40 @@ function prepareResponsiveTables(root){
   }
  }
 }
+// Reveal is opt-in for account password fields only, never for tokens/Webhooks.
+let passwordControlNumber=0;
+function preparePasswordVisibility(dialog){
+ for(const input of dialog.querySelectorAll('input[type="password"][data-password-reveal]')){
+  if(input.closest('.password-control'))continue;
+  const label=input.closest('.field')?.querySelector('label');
+  const fieldName=input.dataset.passwordLabel||label?.textContent.trim()||'密码';
+  if(!input.id)input.id='account-password-'+(++passwordControlNumber);
+  if(label)label.htmlFor=input.id;
+  input.setAttribute('autocapitalize','none');input.spellcheck=false;
+  const wrap=document.createElement('div');wrap.className='password-control';
+  input.before(wrap);wrap.appendChild(input);
+  const toggle=document.createElement('button');toggle.type='button';toggle.className='btn password-toggle';
+  toggle.setAttribute('aria-controls',input.id);
+  const setVisible=visible=>{
+   const start=input.selectionStart,end=input.selectionEnd,direction=input.selectionDirection;
+   input.type=visible?'text':'password';
+   toggle.textContent=visible?'隐藏':'显示';
+   toggle.setAttribute('aria-label',(visible?'隐藏':'显示')+fieldName);
+   if(start!==null&&end!==null)input.setSelectionRange(start,end,direction||'none');
+  };
+  setVisible(false);wrap.appendChild(toggle);
+  toggle.addEventListener('click',()=>setVisible(input.type==='password'));
+  // Submission still reads the same value; closing discards it from the dialog.
+  const conceal=()=>setVisible(false);
+  const form=input.closest('form');form?.addEventListener('submit',conceal);
+  dialog.addEventListener('close',()=>{
+   conceal();input.value='';form?.removeEventListener('submit',conceal);
+  },{once:true});
+ }
+}
 let accessibleDialogNumber=0;
 function openAccessibleDialog(dialog){
+ preparePasswordVisibility(dialog);
  const heading=dialog.querySelector('.modal-head h2');
  if(heading){heading.id='dialog-title-'+(++accessibleDialogNumber);heading.tabIndex=-1;dialog.setAttribute('aria-labelledby',heading.id);}
  updateDialogViewport();dialog.showModal();
@@ -174,13 +206,13 @@ function fieldHtml(f){const name=e(f.name),value=f.value??'',full=f.full?' full'
  else if(f.type==='checkbox')control=`<label class="check-label"><input name="${name}" type="checkbox" ${value?'checked':''}>${e(f.checkboxText||f.label)}</label>`;
  else if(f.type==='files')control=`<input type="file" name="newFiles" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.csv,.docx,.xlsx"><div class="file-list">${S.project.attachments.map(a=>`<label class="check-label"><input type="checkbox" name="existingAttachment" value="${a.id}" ${(f.selected||[]).includes(a.id)?'checked':''}>${e(a.name)}</label>`).join('')}</div>`;
  else if(f.type==='html')control=f.html;
- else control=`<input name="${name}" type="${f.type==='money'?'text':e(f.type||'text')}" value="${e(value)}" ${f.type==='money'?'inputmode="decimal"':f.type==='number'?'inputmode="numeric"':''}${required} ${f.readonly?'readonly':''} ${f.min!==undefined?`min="${e(f.min)}"`:''} ${f.max!==undefined?`max="${e(f.max)}"`:''} ${f.step?`step="${e(f.step)}"`:''} maxlength="${f.maxLength||3000}" autocomplete="${f.type==='password'?'current-password':'off'}">`;
+ else control=`<input name="${name}" type="${f.type==='money'?'text':e(f.type||'text')}" value="${e(value)}" ${f.type==='money'?'inputmode="decimal"':f.type==='number'?'inputmode="numeric"':''}${required} ${f.readonly?'readonly':''} ${f.min!==undefined?`min="${e(f.min)}"`:''} ${f.max!==undefined?`max="${e(f.max)}"`:''} ${f.step?`step="${e(f.step)}"`:''} maxlength="${f.maxLength||3000}" autocomplete="${e(f.autocomplete||(f.type==='password'?'current-password':'off'))}" ${f.type==='password'&&f.revealPassword?`data-password-reveal data-password-label="${e(f.passwordLabel||f.label)}"`:''}>`;
  return `<div class="field${full}">${f.type==='checkbox'?'':`<label>${e(f.label)}${required&&f.type!=='files'&&f.type!=='html'?'<span class="required"> *</span>':''}</label>`}${control}${help}</div>`;}
 function showForm(title,fields,onSubmit,{intro='',submit='保存',initialKey=null}={}){setMenuOpen(false,false);if(modal.open)modal.close();formKey=initialKey||id();formHandler=onSubmit;submitBusy=false;modal.innerHTML=`<form id="dialog-form"><div class="modal-head"><h2>${e(title)}</h2><button type="button" class="icon-button" data-modal-close aria-label="关闭">${icon('close')}</button></div><div class="modal-content">${intro?`<p class="form-intro">${e(intro)}</p>`:''}<div class="form-grid">${fields.map(fieldHtml).join('')}</div><div id="form-error"></div></div><div class="modal-foot"><button type="button" class="btn" data-modal-close>取消</button><button class="btn primary" type="submit">${e(submit)}</button></div></form>`;prepareResponsiveTables(modal);openAccessibleDialog(modal);}
 function showInfo(title,html){setMenuOpen(false,false);if(modal.open)modal.close();formHandler=null;modal.innerHTML=`<div class="modal-head"><h2>${e(title)}</h2><button class="icon-button" data-modal-close aria-label="关闭">${icon('close')}</button></div><div class="modal-content">${html}</div><div class="modal-foot"><button class="btn primary" data-modal-close>关闭</button></div>`;prepareResponsiveTables(modal);openAccessibleDialog(modal);}
 function closeModal(){if(reauthReject){reauthReject(Error('已取消身份确认'));reauthReject=null;}modal.close();}
 function reauth(){return new Promise((resolve,reject)=>{
- const d=document.createElement('dialog');d.innerHTML=`<form><div class="modal-head"><h2>确认是你本人</h2></div><div class="modal-content"><p class="form-intro">重要操作由本人账号确认，验证仅对当前会话短时有效。</p><div class="field"><label>当前账号密码</label><input name="password" type="password" required autocomplete="current-password"></div><div class="reauth-error"></div></div><div class="modal-foot"><button type="button" class="btn" data-cancel>取消</button><button type="submit" class="btn primary">验证身份</button></div></form>`;
+ const d=document.createElement('dialog');d.innerHTML=`<form><div class="modal-head"><h2>确认是你本人</h2></div><div class="modal-content"><p class="form-intro">重要操作由本人账号确认，验证仅对当前会话短时有效。</p><div class="field"><label>当前账号密码</label><input name="password" type="password" required autocomplete="current-password" data-password-reveal data-password-label="当前账号密码"></div><div class="reauth-error"></div></div><div class="modal-foot"><button type="button" class="btn" data-cancel>取消</button><button type="submit" class="btn primary">验证身份</button></div></form>`;
  document.body.appendChild(d);openAccessibleDialog(d);const cancel=()=>{d.close();d.remove();reject(Error('已取消身份确认'));};d.addEventListener('cancel',ev=>{ev.preventDefault();cancel();});d.querySelector('[data-cancel]').onclick=cancel;
  d.querySelector('form').onsubmit=async ev=>{ev.preventDefault();const b=d.querySelector('button[type=submit]');b.disabled=true;try{await api('/api/auth/reauth',{method:'POST',body:{password:new FormData(ev.target).get('password')},key:id()});d.close();d.remove();resolve();}catch(err){d.querySelector('.reauth-error').textContent=err.message;b.disabled=false;}};
 });}
@@ -265,7 +297,7 @@ async function onAction(action,el){if(action.startsWith('ai-'))return AI.action(
  case 'configure-wecom':await reauth();showForm('企业微信群机器人',[{name:'enabled',label:'渠道启用状态',type:'select',options:[['true','启用企业微信提醒'],['false','停用企业微信提醒']]},{name:'webhook',label:'官方群机器人 Webhook 地址',type:'password',required:false,full:true}],async a=>{await api(`/api/projects/${p.id}/channels`,{method:'POST',body:{enabled:a.enabled==='true',webhook:a.webhook}});await navigate('notifications');},{intro:'仅支持企业微信内部群机器人。地址加密保存，不返回浏览器；请确保群内人员均有项目知情权限。'});break;
  case 'test-wecom':await reauth();{const r=await api(`/api/projects/${p.id}/channels/test`,{method:'POST',body:{}});toast(label(r.status)+(r.error?'：'+r.error:''),r.status!=='accepted');await navigate('notifications');break;}
  case 'retry-notice':await reauth();showForm('核查后重新发送',[{name:'confirm',label:'发送确认',type:'checkbox',value:false,checkboxText:'我已检查原发送记录；理解结果不确定时重发可能造成重复短信和额外费用',full:true}],async a=>{if(!a.confirm)throw Error('请先确认已核查发送记录');const r=await api(`/api/projects/${p.id}/channels/retry`,{method:'POST',body:{id:el.dataset.id,acceptPossibleDuplicate:true}});await navigate('notifications');if(r.status!=='accepted')throw Error(label(r.status)+'：'+(r.error||''));});break;
- case 'profile':await reauth();{const u=(await api('/api/auth/me')).user;showForm('账号与通知偏好',[{name:'phone',label:'本人中国大陆手机号',value:u.phone,required:false,full:true},{name:'smsOptIn',label:'短信通知',type:'checkbox',value:u.smsOptIn,checkboxText:'允许系统向本人发送项目关键异常提醒（需管理员开通短信渠道）',full:true},{name:'newPassword',label:'修改密码（不修改请留空，12–128字符）',type:'password',required:false,full:true}],async a=>{await api('/api/profile',{method:'POST',body:{phone:a.phone,smsOptIn:!!a.smsOptIn}});if(a.newPassword)await api('/api/auth/password',{method:'POST',body:{password:a.newPassword}});toast('账号设置已更新');});break;}
+ case 'profile':await reauth();{const u=(await api('/api/auth/me')).user;showForm('账号与通知偏好',[{name:'phone',label:'本人中国大陆手机号',value:u.phone,required:false,full:true},{name:'smsOptIn',label:'短信通知',type:'checkbox',value:u.smsOptIn,checkboxText:'允许系统向本人发送项目关键异常提醒（需管理员开通短信渠道）',full:true},{name:'newPassword',label:'修改密码（不修改请留空，12–128字符）',type:'password',required:false,full:true,maxLength:128,autocomplete:'new-password',revealPassword:true,passwordLabel:'新密码',help:'默认隐藏；需要核对时可点击显示。留空不修改密码。'}],async a=>{await api('/api/profile',{method:'POST',body:{phone:a.phone,smsOptIn:!!a.smsOptIn}});if(a.newPassword)await api('/api/auth/password',{method:'POST',body:{password:a.newPassword}});toast('账号设置已更新');});break;}
  }
 }
 app.addEventListener('click',async event=>{const el=event.target.closest('button,[data-project]');if(!el)return;try{if(el.dataset.tab){await navigate(el.dataset.tab);return;}if(el.dataset.project){await selectProject(el.dataset.project);return;}if(el.dataset.action){el.disabled=true;await onAction(el.dataset.action,el);}}catch(err){if(err.message!=='已取消身份确认')toast(err.message,true);}finally{el.disabled=false;}});
