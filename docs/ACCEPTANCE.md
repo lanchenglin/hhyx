@@ -82,3 +82,7 @@ python tests/browser_render.py
 ## v1.1补充
 
 本文原测试记录保留为v1.0历史验收；v1.1新增AI与全量回归结果见 `ACCEPTANCE_AI.md`，不要把历史离线截图检查合并宣称为在线端到端测试。
+
+## v1.1.1 手机Web补充
+
+响应式回归覆盖7种屏幕尺寸的10个页面及长表单/导航/AI交互，共56项；详见`MOBILE_WEB.md`和`test-results/mobile-render-results-v1.1.1.json`。真实手机、软键盘、Cloudflare和在线全流程仍须在部署后验证。

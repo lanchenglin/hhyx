@@ -1,6 +1,6 @@
 {
   "name": "coop-plan",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "type": "module",
   "description": "合伙有序：多人会签、阶段预算、采购执行、审计留痕与有依据的AI风险分析",
@@ -18,7 +18,8 @@
     "deploy:check": "wrangler deploy --dry-run",
     "demo": "node scripts/seed-demo.mjs",
     "configure:cloudflare": "node scripts/configure-cloudflare.mjs",
-    "fixture:visual": "node scripts/export-demo-fixture.mjs"
+    "fixture:visual": "node scripts/export-demo-fixture.mjs",
+    "test:mobile": "python3 tests/mobile_render.py"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

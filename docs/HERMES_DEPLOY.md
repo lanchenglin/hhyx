@@ -203,3 +203,9 @@ npx wrangler d1 export coop-plan-db --remote --output ./backup-coop-plan.sql
 无需为AI新建Cloudflare Queue；当前实现用D1任务表和已有Cron，单次AI HTTP请求20秒。模型过慢会变成未完成/不确定，不会自动重试。实际计费以服务商账单为准，应用人民币预占不能代替服务商消费上限。
 
 升级交付报告中分别记录：迁移是否完成、原业务是否回归、AI是否仅配置或已实际调用、选用模型/接收方、真实发送次数和测试费用、全员授权是否真实完成、Cron恢复是否实测。不得代替合伙人批准真实采购或共享个人密码。
+
+## 10. v1.1.1 手机Web更新
+
+从v1.1.0更新无需新增迁移；仅更新源码和静态资源，保留现有绑定/Secrets/域名/数据。不要清库或重建应用。新增`public/mobile.css`必须随静态目录部署，本地运行适配器也已包含此资源。先检查`git status`并保留用户修改，再按现有构建/部署步骤发布；从v1.0.0更新仍须执行0002迁移。
+
+运行`npm run check`及`npm test`，有浏览器测试依赖时再运行`node tests/mobile-fixture.mjs`与`npm run test:mobile`。上线后检查`/mobile.css`返回CSS而不是HTML，并按`MOBILE_WEB.md`完成iPhone/安卓及常用微信浏览器的真机验收。不能把离线截图当成云端或软键盘测试通过。
