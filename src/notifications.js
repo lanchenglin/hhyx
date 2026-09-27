@@ -26,8 +26,8 @@ async function sendWecom(env,row,fetcher) {
 }
 async function sendSms(env,row,fetcher) {
  if(!env.ALIYUN_ACCESS_KEY_ID||!env.ALIYUN_ACCESS_KEY_SECRET||!env.ALIYUN_SMS_SIGN_NAME||!env.ALIYUN_SMS_TEMPLATE_CODE)return {status:'not_configured',error:'短信密钥/签名/模板尚未配置'};
- const user=await one(env,'SELECT phone,sms_opt_in FROM users WHERE id=?',row.user_id);
- if(!user?.phone||!user.sms_opt_in)return {status:'disabled',error:'接收人未启用短信或未提供手机号'};
+ const user=await one(env,'SELECT phone,sms_opt_in,disabled FROM users WHERE id=?',row.user_id);
+ if(!user?.phone||!user.sms_opt_in||user.disabled)return {status:'disabled',error:'接收人未启用短信或未提供手机号'};
  const project=await one(env,'SELECT name,state FROM projects WHERE id=?',row.project_id);
  if(!project||!JSON.parse(project.state).members.some(m=>m.active&&m.userId===row.user_id))return {status:'disabled',error:'接收人不再是有效项目成员'};
  const params={AccessKeyId:env.ALIYUN_ACCESS_KEY_ID,Action:'SendSms',Version:'2017-05-25',Format:'JSON',RegionId:'cn-hangzhou',SignatureMethod:'HMAC-SHA1',SignatureVersion:'1.0',SignatureNonce:uid(),Timestamp:now().replace(/\.\d{3}Z$/,'Z'),PhoneNumbers:user.phone,SignName:env.ALIYUN_SMS_SIGN_NAME,TemplateCode:env.ALIYUN_SMS_TEMPLATE_CODE,TemplateParam:JSON.stringify({project:project.name.slice(0,20),title:row.title.slice(0,20)}),OutId:sha(row.id).slice(0,32)};
@@ -41,6 +41,8 @@ export async function deliverOne(env,id,fetcher=fetch) {
  const claim=await env.DB.prepare("UPDATE outbox SET status='sending',lease_until=?,lease_token=?,attempts=attempts+1 WHERE id=? AND status IN ('pending','retry') AND next_at<=?").bind(epoch+60,lease,id,epoch).run();
  if(!claim.meta.changes)return;
  const row=await one(env,'SELECT * FROM outbox WHERE id=?',id);let result;
+ const projectStatus=await one(env,'SELECT lifecycle FROM projects WHERE id=?',row.project_id);
+ if(!projectStatus||projectStatus.lifecycle!=='active'){await env.DB.prepare("UPDATE outbox SET status='disabled',error='项目已归档或进入回收站，停止外发通知',lease_until=0 WHERE id=? AND lease_token=?").bind(id,lease).run();return;}
  try{result=row.channel==='sms'?await sendSms(env,row,fetcher):await sendWecom(env,row,fetcher);}catch(e){result={status:row.channel==='sms'?'uncertain':'retry',error:row.channel==='sms'?'发送结果不确定；请核查回执后人工决定重发':'发送失败或超时，将有限重试'};}
  if(result.status==='retry'&&row.attempts>=5)result.status='failed';
  await env.DB.prepare('UPDATE outbox SET status=?,error=?,provider_receipt=?,sent_at=?,next_at=?,lease_until=0 WHERE id=? AND lease_token=?').bind(result.status,result.error||null,result.receipt||null,result.status==='accepted'?now():null,epoch+Math.min(3600,60*2**row.attempts),id,lease).run();
@@ -66,8 +68,8 @@ async function insertReminder(env,p,userId,key,title,body,target,severity='warni
 export async function scheduled(env) {
  const epoch=Math.floor(Date.now()/1000), today=new Intl.DateTimeFormat('en-CA',{timeZone:env.TZ||'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
  const cursor=(await one(env,"SELECT value FROM settings WHERE key='reminder_cursor'"))?.value||'';
- let list=await rows(env,'SELECT id,state FROM projects WHERE id>? ORDER BY id LIMIT 5',cursor);
- if(!list.length)list=await rows(env,'SELECT id,state FROM projects ORDER BY id LIMIT 5');
+ let list=await rows(env,"SELECT id,state FROM projects WHERE lifecycle='active' AND id>? ORDER BY id LIMIT 5",cursor);
+ if(!list.length)list=await rows(env,"SELECT id,state FROM projects WHERE lifecycle='active' ORDER BY id LIMIT 5");
  for(const row of list){
   const p=JSON.parse(row.state);if(p.status==='draft'||p.status==='completed')continue;
   // 限量生成提醒，避免大量任务在一次 Cron 中超过 D1 查询配额。

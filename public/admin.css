@@ -1,0 +1,13 @@
+/* Admin screens retain the same mobile/touch layout and content permissions. */
+.admin-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 24px}
+.admin-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.admin-projects{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.admin-projects .panel{margin:0}.admin-projects .panel-head{align-items:flex-start;gap:12px}.admin-projects h3{overflow-wrap:anywhere;min-width:0}
+.admin-wrap,.admin-json{overflow-wrap:anywhere;word-break:break-word}
+.admin-json{white-space:pre-wrap;font-size:12px;max-height:440px;overflow:auto;padding:12px;background:#f5f7fa;border-radius:8px;max-width:100%}
+.admin-pagination{display:flex;justify-content:flex-end;gap:12px;margin:18px 0}
+.admin-tabs .btn,.admin-toolbar .btn{min-height:44px}
+.admin-projects .kv dd{min-width:0;overflow-wrap:anywhere}.password-required{max-width:520px;margin:8vh auto;padding:24px}
+.password-required h1{font-size:26px}.password-required .field{margin:16px 0}.admin-readonly-banner{margin-bottom:20px}
+@media(max-width:900px){.admin-projects{grid-template-columns:1fr}}
+@media(max-width:600px){.admin-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.admin-tabs .btn{white-space:normal;padding:10px 8px}.admin-projects .panel-head{flex-wrap:wrap}.admin-toolbar>.buttons{width:100%}.admin-json{font-size:12px;padding:8px}.password-required{margin:24px auto;padding:16px}.admin-pagination{justify-content:stretch}.admin-pagination .btn{flex:1}}

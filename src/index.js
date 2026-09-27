@@ -1,13 +1,14 @@
+import {adminRoute} from './admin.js';
 import { Buffer } from 'node:buffer';
 import { assert, AppError, body, json, now, uid, sha, token, email, text, hashPassword, verifyPassword, encrypt, csv } from './util.js';
-import { authenticate, bootstrap, login, publicUser, startSession, originCheck, requireReauth, rateLimit, sessionCookie } from './auth.js';
+import { authenticate, bootstrap, login, ensureInitialAdmin, publicUser, startSession, originCheck, requireReauth, rateLimit, sessionCookie } from './auth.js';
 import { one, rows, load, readProject, newProject, mutate, auditRows, verifyAudit } from './store.js';
 import { getMember, partner, projectView } from './domain.js';
 import { aiRoute, autoAnalysis, processAiJobs } from './ai.js';
 import { validateWecom, kick, scheduled, deliverOne } from './notifications.js';
 
 const SENSITIVE = new Set(['proposal.vote','purchase.vote','purchase.order','purchase.pay','ledger.verify','ledger.reverse','project.pause','settlement.pay','ai.suspend']);
-const INTERNAL = new Set(['member.join','attachment.add','channel.update','invite.create','ai.run.request','ai.run.finish','ai.review']);
+const INTERNAL = new Set(['admin.lifecycle','admin.member.role','member.join','attachment.add','channel.update','invite.create','ai.run.request','ai.run.finish','ai.review']);
 const MIME = new Set(['application/pdf','image/png','image/jpeg','image/webp','text/plain','text/csv','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
 const MAX_FILE=10*1024*1024;
 const keyOf=req=>req.headers.get('x-idempotency-key');
@@ -20,7 +21,8 @@ async function handle(req,env,ctx){
  if(!path.startsWith('/api/'))return env.ASSETS.fetch(req);
  if(method==='OPTIONS')return new Response(null,{status:405});
  if(!['GET','HEAD'].includes(method))originCheck(req,env);
- if(path==='/api/health'&&method==='GET')return json({ok:true,service:'coop-plan',version:'1.1.0'});
+ if(path==='/api/health'&&method==='GET')return json({ok:true,service:'coop-plan',version:'1.2.0'});
+ if((path==='/api/auth/status'&&method==='GET')||(path==='/api/auth/login'&&method==='POST'))await ensureInitialAdmin(env);
  if(path==='/api/auth/status'&&method==='GET')return json({initialized:!!await one(env,"SELECT value FROM settings WHERE key='bootstrapped'")});
  if(['/api/auth/bootstrap','/api/auth/login','/api/auth/accept'].includes(path)&&method==='POST') {
   await rateLimit(env,`auth-ip:${sha(req.headers.get('cf-connecting-ip')||'local')}`,60);
@@ -29,10 +31,10 @@ async function handle(req,env,ctx){
   if(path.endsWith('/login'))return sessionResponse(await login(env,a,req),req);
   assert(typeof a.token==='string'&&a.token.length<200,'邀请链接无效');
   const invitation=await one(env,'SELECT * FROM invites WHERE token_hash=? AND expires_at>?',sha(a.token),Math.floor(Date.now()/1000));
-  assert(invitation,'邀请已过期或无效',400);const {state}=await load(env,invitation.project_id),m=state.members.find(m=>m.id===invitation.member_id&&m.active);
+  assert(invitation,'邀请已过期或无效',400);const {state,row:inviteProject}=await load(env,invitation.project_id);assert(inviteProject.lifecycle==='active','项目已归档或进入回收站，不能接受邀请',409);const m=state.members.find(m=>m.id===invitation.member_id&&m.active);
   assert(m&&m.email===invitation.email,'邀请对应的成员已变更或退出',403);
   let user=await one(env,'SELECT * FROM users WHERE email=?',invitation.email);
-  if(user){assert(verifyPassword(a.password,user.password_hash),'已存在账号，请输入该账号密码',401);}
+  if(user){assert(!user.disabled&&!user.must_change_password,'该账号已停用或需要先登录修改临时密码',403);assert(verifyPassword(a.password,user.password_hash),'已存在账号，请输入该账号密码',401);}
   else {assert(!invitation.used_by,'邀请已使用',409);user={id:uid(),email:invitation.email,name:text(a.name,'姓名',60),password_hash:hashPassword(a.password)};await env.DB.prepare('INSERT INTO users(id,email,name,password_hash,created_at) VALUES(?,?,?,?,?)').bind(user.id,user.email,user.name,user.password_hash,now()).run();}
   assert(!invitation.used_by||invitation.used_by===user.id,'邀请已由其他账号使用',409);
   if(!m.userId)await mutate(env,invitation.project_id,user,{type:'member.join',data:{memberId:m.id}},`accept_${sha(a.token).slice(0,40)}`,{inviteVerified:true,extraStatements:(e,pid,op)=>[e.DB.prepare('UPDATE invites SET used_by=? WHERE token_hash=? AND EXISTS(SELECT 1 FROM projects WHERE id=? AND last_operation=?)').bind(user.id,sha(a.token),pid,op)]});
@@ -47,19 +49,34 @@ async function handle(req,env,ctx){
  if(path==='/api/auth/me'&&method==='GET')return json({user:publicUser(user),csrf:session.csrf});
  if(path==='/api/auth/logout'&&method==='POST'){await env.DB.prepare('DELETE FROM sessions WHERE token_hash=?').bind(session.hash).run();return json({ok:true},200,{'Set-Cookie':sessionCookie(req,'',0)});}
  if(path==='/api/auth/reauth'&&method==='POST'){await rateLimit(env,`reauth:${user.id}`,10);const a=await body(req);assert(verifyPassword(a.password,user.password_hash),'密码不正确',403);await env.DB.prepare('UPDATE sessions SET reauth_at=? WHERE token_hash=?').bind(Math.floor(Date.now()/1000),session.hash).run();return json({ok:true,validForSeconds:300});}
- if(path==='/api/auth/password'&&method==='POST'){requireReauth(session);const a=await body(req);const hash=hashPassword(a.password);await env.DB.batch([env.DB.prepare('UPDATE users SET password_hash=? WHERE id=?').bind(hash,user.id),env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash<>?').bind(user.id,session.hash)]);return json({ok:true});}
+ if(path==='/api/auth/password'&&method==='POST'){
+  requireReauth(session);const a=await body(req);const hash=hashPassword(a.password);
+  assert(!verifyPassword(a.password,user.password_hash),'新密码不能与当前密码相同');
+  const nextVersion=user.auth_version+1;
+  const changed=await env.DB.batch([
+   env.DB.prepare('UPDATE users SET password_hash=?,must_change_password=0,auth_version=auth_version+1,updated_at=? WHERE id=? AND auth_version=? AND disabled=0').bind(hash,now(),user.id,user.auth_version),
+   env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash<>? AND EXISTS(SELECT 1 FROM users WHERE id=? AND auth_version=? AND password_hash=?)').bind(user.id,session.hash,user.id,nextVersion,hash),
+   env.DB.prepare('UPDATE sessions SET auth_version=?,reauth_at=0 WHERE token_hash=? AND EXISTS(SELECT 1 FROM users WHERE id=? AND auth_version=? AND password_hash=?)').bind(nextVersion,session.hash,user.id,nextVersion,hash),
+   env.DB.prepare("INSERT INTO admin_audit(id,actor_id,actor_name,action,target_id,details,created_at) SELECT ?,?,?,'account.password_changed',?,'{}',? WHERE EXISTS(SELECT 1 FROM users WHERE id=? AND auth_version=? AND password_hash=?)").bind(uid(),user.id,user.name,user.id,now(),user.id,nextVersion,hash)
+  ]);assert(changed[0].meta.changes===1,'账号同时发生变化，请重新登录',409);return json({ok:true,mustChangePassword:false});
+ }
+ if(user.must_change_password)throw new AppError('请先修改临时密码，暂不能访问业务或管理功能',403,'PASSWORD_CHANGE_REQUIRED');
+ if(path.startsWith('/api/admin/'))return adminRoute(req,env,ctx,{user,session,url});
+ if(path==='/api/auth/revoke-others'&&method==='POST'){requireReauth(session);await env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash<>?').bind(user.id,session.hash).run();return json({ok:true});}
  if(path==='/api/profile'&&method==='POST'){requireReauth(session);const a=await body(req);assert(typeof a.smsOptIn==='boolean','请明确是否启用短信');const phone=text(a.phone,'手机号',20,false);assert(!phone||/^(?:\+?86)?1[3-9]\d{9}$/.test(phone),'第一版短信支持中国大陆手机号');assert(!a.smsOptIn||phone,'启用短信需要手机号');await env.DB.prepare('UPDATE users SET phone=?,sms_opt_in=? WHERE id=?').bind(phone,a.smsOptIn?1:0,user.id).run();return json({ok:true});}
  if(path==='/api/projects'&&method==='GET') {
-  const list=await rows(env,'SELECT p.id,p.name,p.state,p.revision,p.updated_at FROM project_access a JOIN projects p ON p.id=a.project_id WHERE a.user_id=? ORDER BY p.updated_at DESC',user.id);
-  return json({projects:list.filter(r=>JSON.parse(r.state).members.some(m=>m.active&&m.userId===user.id)).map(r=>{const p=JSON.parse(r.state);return {id:r.id,name:r.name,status:p.status,description:p.description,memberCount:p.members.filter(m=>m.active).length,revision:r.revision,updatedAt:r.updated_at};})});
+  const list=await rows(env,"SELECT p.id,p.name,p.state,p.revision,p.updated_at,p.lifecycle FROM project_access a JOIN projects p ON p.id=a.project_id WHERE a.user_id=? AND p.lifecycle!='trashed' ORDER BY p.updated_at DESC",user.id);
+  return json({projects:list.filter(r=>JSON.parse(r.state).members.some(m=>m.active&&m.userId===user.id)).map(r=>{const p=JSON.parse(r.state);return {id:r.id,name:r.name,status:p.status,lifecycle:r.lifecycle,description:p.description,memberCount:p.members.filter(m=>m.active).length,revision:r.revision,updatedAt:r.updated_at};})});
  }
- if(path==='/api/projects'&&method==='POST') {await rateLimit(env,`project-create:${user.id}`,20,3600);return json(await newProject(env,await body(req),user),201);}
+ if(path==='/api/projects'&&method==='POST') {assert(user.can_create_projects!==0,'管理员未授予新建项目权限；仍可加入获邀请的项目',403);await rateLimit(env,`project-create:${user.id}`,20,3600);return json(await newProject(env,await body(req),user),201);}
  if(path==='/api/notifications'&&method==='GET')return json({items:await rows(env,'SELECT n.* FROM notifications n JOIN project_access a ON a.project_id=n.project_id AND a.user_id=n.user_id WHERE n.user_id=? ORDER BY n.created_at DESC LIMIT ?',user.id,pageLimit(url.searchParams.get('limit'),200))});
  let match=routeMatch(path,/^\/api\/notifications\/([^/]+)\/read$/);
  if(match&&method==='POST'){await env.DB.prepare('UPDATE notifications SET read_at=? WHERE id=? AND user_id=?').bind(now(),decodeURIComponent(match[1]),user.id).run();return json({ok:true});}
  match=routeMatch(path,/^\/api\/projects\/([^/]+)(?:\/(.*))?$/);
  if(!match)throw new AppError('接口不存在',404);
  const pid=match[1],sub=match[2]||'';const {state,row}=await load(env,pid);getMember(state,user);
+ assert(row.lifecycle!=='trashed','项目已被管理员放入回收站，历史保留；请联系管理员恢复',410,'PROJECT_TRASHED');
+ if(!['GET','HEAD'].includes(method))assert(row.lifecycle==='active','项目已归档，当前只读；请管理员取消归档后再操作',409,'PROJECT_READ_ONLY');
  if(sub==='ai'||sub.startsWith('ai/'))return aiRoute(req,env,ctx,{pid,state,user,session,sub,url});
  if(!sub&&method==='GET')return json({...projectView(state,user),revision:row.revision});
  if(sub==='actions'&&method==='POST') {

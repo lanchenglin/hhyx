@@ -4,9 +4,19 @@
 
 不是记事本，也不是实际付款系统。每笔采购默认由**全体已加入的合伙人**明确批准，不开放“超时视为同意”或管理员强行放行的入口。
 
+## v1.2.0：系统管理员后台
+
+新增 **系统管理 → 管理总览 / 项目与回收站 / 用户与权限 / AI模型配置 / 管理员日志**，手机和电脑使用同一入口。
+
+支持归档只读、删除到回收站、恢复、用户启停与会话撤销、临时密码重置、创建项目权限、受控项目角色变更，以及网页加密保存AI的Key/Model/URL。管理员不获得项目代签权；已记录业务不物理清库。AI配置页面仅管理员可用，项目成员仍可看见发送接收方和费用依据。
+
+**升级必须先执行新迁移 `0003_administration.sql`。原初始化账号增加 `admin` 用户名和系统管理权限，原密码保留，不覆盖已有数据。** 新站点可以显式注入初始管理员临时密码Secret，首登强制修改；公开源码没有共享默认密码。
+
+操作、权限矩阵、默认管理员说明、已实现/后续规划：[`docs/ADMINISTRATION.md`](docs/ADMINISTRATION.md)。升级与真实验收：[`docs/HERMES_DEPLOY.md`](docs/HERMES_DEPLOY.md)、[`docs/ACCEPTANCE_ADMIN.md`](docs/ACCEPTANCE_ADMIN.md)。
+
 ## 仓库与界面预览
 
-项目仓库：<https://github.com/lanchenglin/hzjc>。
+项目仓库：<https://github.com/lanchenglin/hhyx>。
 
 本仓库包含运行源码、数据库迁移、自动化测试和部署文档。静态演示截图保留在原始交付 ZIP 的 `docs/previews/` 中，不作为运行依赖；启动本地服务即可查看电脑与手机界面。
 
@@ -48,8 +58,8 @@
 需要 **Node.js 22.16.0 或更高版本**，必须支持内置 `node:sqlite`。推荐在 WSL/Linux 运行。
 
 ```bash
-git clone https://github.com/lanchenglin/hzjc.git
-cd hzjc
+git clone https://github.com/lanchenglin/hhyx.git
+cd hhyx
 npm run dev
 ```
 

@@ -49,7 +49,7 @@ export function publicEngine(env) {
   const config = {provider, baseUrl:u.href.replace(/\/$/, ''), model, scope:AI_SCOPE,
    outputTokens:Number(env.AI_OUTPUT_TOKENS || 4096),
    inputCentsPerMillion:Number(env.AI_INPUT_CENTS_PER_MILLION), outputCentsPerMillion:Number(env.AI_OUTPUT_CENTS_PER_MILLION),
-   structured:env.AI_STRUCTURED_OUTPUT !== 'false'};
+   structured:env.AI_STRUCTURED_OUTPUT !== 'false',...(env.AI_CONFIGURATION_REVISION?{configurationRevision:env.AI_CONFIGURATION_REVISION}:{})};
   assert(Number.isInteger(config.outputTokens) && config.outputTokens >= 1024 && config.outputTokens <= 8192, '输出上限须为1024–8192 token');
   for (const k of ['inputCentsPerMillion','outputCentsPerMillion']) assert(Number.isSafeInteger(config[k]) && config[k] > 0 && config[k] <= 100000000, '须配置真实费率（每百万 token 的人民币分），不可使用未知或零费率启用费用控制');
   return {...config, fingerprint:sha(config), configured:!!env.AI_API_KEY, error:env.AI_API_KEY ? '' : '尚未配置服务端 AI_API_KEY'};
@@ -66,7 +66,7 @@ export function validatePolicy(a) {
 export const aiConsentValid = (p, engine) => {
  const policy=p.ai?.policy;
  const ids=p.members.filter(m=>m.active&&m.role==='partner').map(m=>m.id).sort();
- return !!(policy && !p.ai.suspended && engine.configured && policy.provider.fingerprint===engine.fingerprint &&
+ return !!((p.lifecycle||'active')==='active' && policy && !p.ai.suspended && engine.configured && policy.provider.fingerprint===engine.fingerprint &&
   ids.length>=2 && JSON.stringify(ids)===JSON.stringify([...policy.signerIds].sort()) && p.members.filter(m=>m.active&&m.role==='partner').every(m=>m.userId));
 };
 export function aiUsage(p, month=new Date().toISOString().slice(0,7)) {

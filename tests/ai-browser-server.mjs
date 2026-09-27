@@ -18,6 +18,7 @@ const report=await f.owner.ok(f.base+'/ai/runs/'+ai.runs[0].id,undefined,'GET');
 const previews={project:await f.owner.ok(f.base+'/ai/preview',{kind:'project'}),purchase:await f.owner.ok(f.base+'/ai/preview',{kind:'purchase',targetId:visualProject.purchases[0].id}),stage:await f.owner.ok(f.base+'/ai/preview',{kind:'stage',targetId:'stage-pilot'})};
 await mkdir('artifacts',{recursive:true});
 await writeFile('artifacts/ai-visual-fixture.json',JSON.stringify({user:{id:f.owner.user.id,name:f.owner.user.name,email:f.owner.user.email},project:visualProject,projects:[{id:f.pid,name:visualProject.name,status:'active',memberCount:3}],ai,report,previews,notifications:[],csrf:'offline-only'}));
+if(process.argv.includes('--fixture-only')){await f.close();console.log('AI visual fixture created; no server started.');process.exit(0);}
 const port=Number(process.env.PORT||8799);f.rt.env.APP_URL=`http://localhost:${port}`;
 const server=http.createServer(async(req,res)=>{try{const chunks=[];for await(const c of req)chunks.push(c);const r=await worker.fetch(new Request(`http://localhost:${port}${req.url}`,{method:req.method,headers:req.headers,body:['GET','HEAD'].includes(req.method)?undefined:Buffer.concat(chunks)}),f.rt.env,f.rt.ctx);res.writeHead(r.status,Object.fromEntries(r.headers));res.end(Buffer.from(await r.arrayBuffer()));}catch{res.writeHead(500);res.end('test-server-error');}});
 server.listen(port,'127.0.0.1',()=>console.log('AI integration browser test server ready on loopback'));

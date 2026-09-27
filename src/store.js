@@ -14,11 +14,11 @@ export function auditStatement(env,c,id,hash,op) {
 }
 export async function newProject(env,input,actor) {
  const at=now(),id=uid(),op=uid(),p=createProject(input,actor,{at,id});const c=auditContent(id,1,actor,'project.create',input,'创建合作项目','',sha(p),'',at), hash=sha(c);
- await env.DB.batch([
-  env.DB.prepare('INSERT INTO projects(id,name,state,revision,last_operation,audit_head,created_at,updated_at) VALUES(?,?,?,1,?,?,?,?)').bind(id,p.name,JSON.stringify(p),op,hash,at,at),
-  env.DB.prepare('INSERT INTO project_access(project_id,user_id) VALUES(?,?)').bind(id,actor.id),
+ const batch=await env.DB.batch([
+  env.DB.prepare('INSERT INTO projects(id,name,state,revision,last_operation,audit_head,created_at,updated_at) SELECT ?,?,?,1,?,?,?,? WHERE EXISTS(SELECT 1 FROM users WHERE id=? AND disabled=0 AND must_change_password=0 AND can_create_projects=1 AND auth_version=?)').bind(id,p.name,JSON.stringify(p),op,hash,at,at,actor.id,actor.auth_version||0),
+  env.DB.prepare('INSERT INTO project_access(project_id,user_id) SELECT ?,? WHERE EXISTS(SELECT 1 FROM projects WHERE id=? AND last_operation=?)').bind(id,actor.id,id,op),
   auditStatement(env,c,uid(),hash,op)
- ]);return {...projectView(p,actor),revision:1};
+ ]);assert(batch[0].meta.changes===1,'新建项目权限或账号状态已变化，请重新登录核对',403,'CREATE_PROJECT_DENIED');return {...projectView(p,actor),revision:1};
 }
 function conditionalInsert(env,sql,args,pid,op) {return env.DB.prepare(sql+ ' WHERE EXISTS(SELECT 1 FROM projects WHERE id=? AND last_operation=?)').bind(...args,pid,op);}
 function eventStatements(env,state,events,op,at) {
@@ -41,13 +41,22 @@ export async function mutate(env,pid,actor,action,key,options={}) {
   const previous=await one(env,'SELECT request_hash,revision FROM operations WHERE id=?',op);
   if(previous){assert(previous.request_hash===reqHash,'同一个幂等键不能提交不同内容',409);return {...await readProject(env,pid,actor),idempotent:true};}
   const {row,state}=await load(env,pid);
+  let accountGuard='',accountArgs=[];
+  if(!(options.aiSystemVerified&&action.type==='ai.run.finish')){
+   const account=await one(env,'SELECT disabled,system_role,auth_version,must_change_password FROM users WHERE id=?',actor.id);
+   assert(account&&!account.disabled&&!account.must_change_password,'账号已停用或需要先修改密码',403,'ACCOUNT_RESTRICTED');
+   if(actor.auth_version!=null)assert(account.auth_version===actor.auth_version,'账号权限已变化，请重新登录',401,'AUTH_REQUIRED');
+   if(options.adminVerified)assert(account.system_role==='admin','缺少系统管理员权限',403,'ADMIN_REQUIRED');
+   accountGuard=' AND EXISTS(SELECT 1 FROM users WHERE id=? AND disabled=0 AND must_change_password=0 AND auth_version=?'+(options.adminVerified?" AND system_role='admin'":'')+')';
+   accountArgs=[actor.id,account.auth_version];
+  }
   const ctx={id:op.slice(0,32),at,today:new Intl.DateTimeFormat('sv-SE',{timeZone:env.TZ||'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(at)),...options};
-  if(options.requiredRevision!=null)assert(row.revision===options.requiredRevision,'项目资料同时发生变化，请刷新后重新分析',409);
+  if(options.requiredRevision!=null)assert(row.revision===options.requiredRevision,'项目资料同时发生变化，请刷新后重新核对',409);
   const result=reduceProject(state,action,actor,ctx),next=result.state;
   const revision=row.revision+1,afterHash=sha(next),guard=uid();
   const c=auditContent(pid,revision,actor,action.type,action.data||{},result.summary,sha(state),afterHash,row.audit_head,at),recordHash=sha(c);
   const stmt=[
-   env.DB.prepare('UPDATE projects SET name=?,state=?,revision=?,last_operation=?,audit_head=?,updated_at=? WHERE id=? AND revision=?').bind(next.name,JSON.stringify(next),revision,guard,recordHash,at,pid,row.revision),
+   env.DB.prepare('UPDATE projects SET name=?,state=?,revision=?,last_operation=?,audit_head=?,updated_at=?,lifecycle=? WHERE id=? AND revision=?'+accountGuard).bind(next.name,JSON.stringify(next),revision,guard,recordHash,at,next.lifecycle||'active',pid,row.revision,...accountArgs),
    conditionalInsert(env,'INSERT INTO operations(id,project_id,user_id,request_hash,revision,created_at) SELECT ?,?,?,?,?,?',[op,pid,actor.id,reqHash,revision,at],pid,guard),
    auditStatement(env,c,uid(),recordHash,guard),
    ...eventStatements(env,next,result.events,guard,at)

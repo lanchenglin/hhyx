@@ -17,10 +17,10 @@ OUT.mkdir(exist_ok=True)
 if not (OUT / 'mobile-fixture.json').exists():
     subprocess.run(['node', 'tests/mobile-fixture.mjs'], cwd=ROOT, check=True)
 fixture = json.loads((OUT / 'mobile-fixture.json').read_text())
-css = '\n'.join((ROOT / f'public/{name}.css').read_text() for name in ['styles', 'mobile'])
+css = '\n'.join((ROOT / f'public/{name}.css').read_text() for name in ['styles', 'mobile', 'admin'])
 svg = 'data:image/svg+xml,' + urllib.parse.quote((ROOT / 'public/favicon.svg').read_text())
-html = (ROOT / 'public/index.html').read_text().replace('<link rel="stylesheet" href="/styles.css">', '<style>' + css + '</style>').replace('<link rel="stylesheet" href="/mobile.css">', '').replace('<script type="module" src="/app.js"></script>', '').replace('/favicon.svg', svg)
-code = (ROOT/'public/ai-ui.js').read_text().replace('export function', 'function') + '\n' + (ROOT/'public/app.js').read_text().replace("import { createAiUI } from './ai-ui.js';", '').replace('/favicon.svg', svg)
+html = (ROOT / 'public/index.html').read_text().replace('<link rel="stylesheet" href="/styles.css">', '<style>' + css + '</style>').replace('<link rel="stylesheet" href="/mobile.css">', '').replace('<link rel="stylesheet" href="/admin.css">', '').replace('<script type="module" src="/app.js"></script>', '').replace('/favicon.svg', svg)
+code = (ROOT/'public/admin-ui.js').read_text().replace('export function', 'function') + '\n' + (ROOT/'public/ai-ui.js').read_text().replace('export function', 'function') + '\n' + (ROOT/'public/app.js').read_text().replace("import { createAdminUI } from './admin-ui.js';",'').replace("import { createAiUI } from './ai-ui.js';", '').replace('/favicon.svg', svg)
 checks, errors = [], []
 MOCK = r'''f=>{
  window.fixture=f;window.mobileWrites=[];let counter=0;
@@ -196,8 +196,20 @@ with sync_playwright() as pw:
     assert 'user-scalable=no' not in page.locator('meta[name=viewport]').get_attribute('content')
     checks.append('360px：登录页正常布局、16px输入文字，未禁用用户缩放')
     page.screenshot(path=str(OUT/'mobile-360-login.png'),full_page=True)
+    context.close()
+    archived=copy.deepcopy(fixture)
+    archived['project']['lifecycle']='archived'
+    context,page=mount(browser,390,data=archived)
+    page.locator('.admin-readonly-banner').wait_for()
+    navigate(page,'ai')
+    assert page.locator('[data-action="ai-new"]').first.is_disabled()
+    assert page.locator('[data-action="ai-open"]').first.is_enabled()
+    page.locator('[data-action="ai-open"]').first.click()
+    assert page.locator('[data-action="ai-source"]').first.is_enabled()
+    assert page.locator('[data-action="ai-task"]').first.is_disabled()
+    checks.append('390px：归档项目AI报告和来源仍可读，新分析与转任务按钮禁用')
     context.close();browser.close()
-report={'version':'1.1.1','mode':'offline-Chromium-responsive-DOM-touch-and-focus; real local fixture, mocked fetch/model','passed':len(checks),'checks':checks,'pageErrors':errors,'limits':['不是手机真机或浏览器到后端的在线端到端测试。','短视口仅模拟可用高度，不代表实际iOS/安卓软键盘验证。','没有访问Cloudflare、调用真实AI或发送短信/微信消息。']}
+report={'version':'1.2.0','mode':'offline-Chromium-responsive-DOM-touch-and-focus; real local fixture, mocked fetch/model','passed':len(checks),'checks':checks,'pageErrors':errors,'limits':['不是手机真机或浏览器到后端的在线端到端测试。','短视口仅模拟可用高度，不代表实际iOS/安卓软键盘验证。','没有访问Cloudflare、调用真实AI或发送短信/微信消息。']}
 (OUT/'mobile-render-results.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
 print(json.dumps(report,ensure_ascii=False,indent=2))
 if errors:raise SystemExit(1)

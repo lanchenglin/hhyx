@@ -18,8 +18,8 @@ export function cents(v, name = '金额', allowZero = false) {
 }
 export function email(v) { const e = text(v, '邮箱', 254).toLowerCase(); assert(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e), '邮箱格式不正确'); return e; }
 export function date(v, required = false) { if (!v && !required) return ''; assert(typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(v)), '日期格式应为 YYYY-MM-DD'); assert(new Date(`${v}T00:00:00Z`).toISOString().slice(0,10) === v, '日期不存在'); return v; }
-export function hashPassword(password) {
-  assert(typeof password === 'string' && password.length >= 12 && password.length <= 128, '密码须为12–128字符');
+export function hashPassword(password, {temporary=false}={}) {
+  assert(typeof password === 'string' && password.length >= (temporary?10:12) && password.length <= 128, temporary?'初始临时密码须为10–128字符':'密码须为12–128字符');
   const salt = randomBytes(16).toString('hex');
   const hash = scryptSync(password, salt, 32, { N: 32768, r: 8, p: 3, maxmem: 64 * 1024 * 1024 }).toString('hex');
   return `scrypt$32768$8$3$${salt}$${hash}`;
@@ -29,7 +29,7 @@ export function verifyPassword(password, stored) {
   const [, N, r, p, salt, expected] = stored.split('$');
   return safeEqual(scryptSync(password, salt, 32, { N:+N, r:+r, p:+p, maxmem:64*1024*1024 }).toString('hex'), expected);
 }
-export function encrypt(value, key) { const k = Buffer.from(key || '', 'base64'); assert(k.length === 32, '尚未配置通知加密密钥 CONFIG_ENCRYPTION_KEY', 503); const iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm', k, iv); return Buffer.concat([iv, cipher.update(value), cipher.final(), cipher.getAuthTag()]).toString('base64'); }
+export function encrypt(value, key) { const k = Buffer.from(key || '', 'base64'); assert(k.length === 32, '尚未配置服务端加密密钥 CONFIG_ENCRYPTION_KEY', 503); const iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm', k, iv); return Buffer.concat([iv, cipher.update(value), cipher.final(), cipher.getAuthTag()]).toString('base64'); }
 export function decrypt(value, key) { const data = Buffer.from(value, 'base64'), d = createDecipheriv('aes-256-gcm', Buffer.from(key,'base64'), data.subarray(0,12)); d.setAuthTag(data.subarray(-16)); return Buffer.concat([d.update(data.subarray(12,-16)),d.final()]).toString(); }
 export const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {status, headers:{'Content-Type':'application/json; charset=utf-8', 'Cache-Control':'no-store', ...extra}});
 export async function body(req, max = 100000) {

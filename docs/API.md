@@ -1,5 +1,7 @@
 # API与实现导航
 
+> **v1.2.0更新：** 已加入系统管理员后台、归档/回收站、用户权限与网页AI配置。以下早期版本内容需结合 `ADMINISTRATION.md` 阅读；升级必须应用0003，不能只替换前端。旧密码保留，管理员不能代签，已发生业务不物理删除。
+
 所有业务API在 `/api/`。同源cookie认证，写请求必须有正确 `Origin`；登录后写请求还要 `X-CSRF-Token`。项目变更提交 `X-Idempotency-Key`（12–100位英文数字、下划线或连字符），推荐UUID。前端已处理这些字段，不需要用户手工发送。
 
 ## 身份与项目
@@ -119,3 +121,30 @@ AI任务状态：queued → running → completed/failed/uncertain；发送前�
 403为项目/角色不符；409为预览/授权过期、幂等冲突或重试缺确认；429为费用/调用数/并发/速率限制；503为服务端模型未配置。错误不是风险分析结论。
 
 项目 `/export` 更新为schemaVersion 2，附 `aiManifest`（id/hash/详情链接）而不是内嵌所有AI输入。批量完整备份仍需D1导出，并另存R2。`src/ai-policy.js`授权配置，`ai-snapshot.js`脱敏和本地计算，`ai-provider.js`协议/报告校验，`ai.js`队列/API，`public/ai-ui.js`界面。初次和升级均须应用 `0002_ai_analysis.sql`。
+
+## 系统管理（v1.2.0）
+
+所有 `/api/admin/*` 要求当前账号有效且 `system_role=admin`，临时密码必须先修改。POST还要求Origin、CSRF、本人近期验证及幂等键。
+
+| 接口 | 用途 |
+|---|---|
+| GET /api/admin/overview | 计数和绑定诊断 |
+| GET /api/admin/users?q=&offset= | 搜索/分页用户 |
+| POST /api/admin/users | 新建：name/username/email/systemRole/canCreateProjects/temporaryPassword/reason |
+| GET /api/admin/users/:id | 用户资料、所属项目、authVersion（无密码） |
+| POST /api/admin/users/:id | 修改资料/系统角色/disabled/canCreateProjects；expectedVersion、reason及必要影响确认 |
+| POST /api/admin/users/:id/reset-password | 其他用户临时密码重置；expectedVersion、temporaryPassword、reason |
+| POST /api/admin/users/:id/revoke-sessions | 撤销登录；expectedVersion、reason |
+| GET /api/admin/projects?lifecycle=active\|archived\|trashed\|all&q=&offset= | 全站项目分页 |
+| GET /api/admin/projects/:id | 只读审阅（记录访问日志） |
+| GET /api/admin/projects/:id/export | 业务JSON/审计/AI索引（不等于完整备份） |
+| GET /api/admin/projects/:id/files/:fileId | 项目附件只读下载；校验文件属于该项目 |
+| GET /api/admin/projects/:id/ai/:runId | 只读AI报告及该次快照 |
+| POST /api/admin/projects/:id/lifecycle | action=archive/unarchive/trash/restore，expectedRevision、confirmName、confirmImpact、reason |
+| POST /api/admin/projects/:id/members | memberId/role/expectedRevision/reason；正式项目生成全员提议 |
+| GET /api/admin/ai-settings | 无Key明文的配置视图和revision |
+| POST /api/admin/ai-settings | enabled/provider/baseUrl/model/key或clearKey/inputCentsPerMillion/outputCentsPerMillion/outputTokens/structured/expectedRevision/reason；第三方需要confirmExternalHost |
+| POST /api/admin/ai-settings/test | expectedRevision、confirmCost=true；可能计费、限流、无项目数据 |
+| GET /api/admin/audit?before=&action= | 管理日志分页、按动作筛选 |
+
+普通登录支持原email字段中填写邮箱或用户名，也支持login字段。`/api/auth/me`增加username/systemRole/disabled/canCreateProjects/mustChangePassword。密码接口保留，修改后撤销其他会话并轮换权限版本。归档写请求409、回收站普通项目访问410、普通账号后台访问403。

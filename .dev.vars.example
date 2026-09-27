@@ -23,3 +23,10 @@ ALIYUN_SMS_TEMPLATE_CODE=
 # AI_ALLOWED_HOSTS=api.example.com
 # Anthropic 原生：AI_PROVIDER=anthropic，AI_BASE_URL=https://api.anthropic.com/v1
 # 配置后仍需每个项目全员批准“AI授权与费用规则”，不会自动发送现有项目资料。
+
+# v1.2：可选新空站点管理员。切勿把共享默认密码写入本文件或Git。
+# INITIAL_ADMIN_ENABLED=true
+# INITIAL_ADMIN_PASSWORD=（仅在被忽略的.dev.vars中私下设置；生产用Secret）
+# INITIAL_ADMIN_EMAIL=admin@example.com
+# 老站点迁移提升原初始化用户为admin，原密码不变；不再创建默认账号。
+# AI可改为在“系统管理 → AI模型配置”设置，此后数据库加密配置优先。

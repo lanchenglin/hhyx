@@ -6,9 +6,9 @@ import json, pathlib, os, urllib.parse
 from playwright.sync_api import sync_playwright
 ROOT=pathlib.Path(__file__).resolve().parents[1];OUT=ROOT/'artifacts';OUT.mkdir(exist_ok=True)
 fixture=json.loads((OUT/'visual-fixture.json').read_text())
-css=(ROOT/'public/styles.css').read_text()+'\n'+(ROOT/'public/mobile.css').read_text()
+css=(ROOT/'public/styles.css').read_text()+'\n'+(ROOT/'public/mobile.css').read_text()+'\n'+(ROOT/'public/admin.css').read_text()
 svg='data:image/svg+xml,'+urllib.parse.quote((ROOT/'public/favicon.svg').read_text())
-code=(ROOT/'public/ai-ui.js').read_text().replace('export function','function')+'\n'+(ROOT/'public/app.js').read_text().replace("import { createAiUI } from './ai-ui.js';",'').replace('/favicon.svg',svg)
+code=(ROOT/'public/admin-ui.js').read_text().replace('export function','function')+'\n'+(ROOT/'public/ai-ui.js').read_text().replace('export function','function')+'\n'+(ROOT/'public/app.js').read_text().replace("import { createAdminUI } from './admin-ui.js';",'').replace("import { createAiUI } from './ai-ui.js';",'').replace('/favicon.svg',svg)
 errors=[];checks=[]
 with sync_playwright() as pw:
     browser=pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH','/usr/bin/chromium'),headless=True,args=['--no-sandbox','--disable-dev-shm-usage'])

@@ -3,6 +3,7 @@ import { assert, text, cents, email, date, sha } from './util.js';
 import { validateBrief, validatePolicy, aiConsentValid, aiUsage } from './ai-policy.js';
 
 export const ACTIONS = {
+ 'admin.lifecycle':'管理员调整项目生命周期','admin.member.role':'管理员提议项目成员权限变更',
  'ai.materials':'更新分析补充资料','ai.suspend':'暂停外部AI发送','ai.run.request':'请求AI分析','ai.run.finish':'记录AI分析结果','ai.review':'记录AI风险处置',
  'plan.update':'修改筹备计划','member.remove':'移除筹备成员','member.add':'添加筹备成员','member.join':'成员接受邀请',
  'task.add':'创建任务','task.progress':'提交任务进度','task.accept':'验收任务',
@@ -17,7 +18,7 @@ export const ACTIONS = {
 const RESERVED = new Set(['pending','approved','ordered','received']);
 const CASH_SIGNS = { contribution:1, revenue:1, loan_in:1, receivable_collection:1, refund_in:1, operating_expense:-1, loan_repayment:-1, payable_payment:-1, purchase_payment:-1, distribution:-1 };
 const MANUAL_LEDGER = new Set(['contribution','revenue','loan_in','receivable_collection','refund_in','operating_expense','loan_repayment','payable_payment','cost_of_goods_sold','inventory_writeoff','receivable_revenue','payable_expense']);
-const SIGNIFICANT = new Set(['budget','member_add','member_remove','profit_rule','terms']);
+const SIGNIFICANT = new Set(['budget','member_add','member_remove','member_role','profit_rule','terms']);
 const clone = x => structuredClone(x);
 const activeMembers = p => p.members.filter(m=>m.active);
 export const partners = p => activeMembers(p).filter(m=>m.role==='partner');
@@ -106,14 +107,44 @@ function allocate(total,ms) {
  for(const a of [...result].sort((a,b)=>b.remainder-a.remainder||a.memberId.localeCompare(b.memberId))) {if(left-->0)a.amountCents++; delete a.remainder;}
  return result;
 }
+function validateRoleChange(p,a){
+ const m=getById(p.members,a.memberId,'成员');assert(m.active,'成员已退出');
+ assert(['partner','operator','viewer'].includes(a.role),'项目角色不正确');assert(m.role!==a.role,'角色没有变化');
+ assert(m.userId!==p.ownerId||a.role==='partner','项目创建人须保留合伙人身份；不能通过降权移除其必签权');
+ if(p.status!=='draft'&&m.role==='partner'&&a.role!=='partner'){
+  assert(partners(p).length>2,'至少保留两名合伙人');assert(m.shareBps===0,'请先共同调整该合伙人的分配比例为零，再变更角色');
+ }
+ if(a.role==='partner'&&m.role!=='partner')assert(partners(p).length<30,'最多30名合伙人');
+ if(a.role==='viewer'){
+  assert(!p.tasks.some(t=>t.status!=='done'&&(t.assigneeId===m.id||t.reviewerId===m.id)),'该成员有未完成任务，请先共同变更分工');
+  assert(!p.purchases.some(q=>!['received','cancelled'].includes(q.status)&&(q.executorId===m.id||q.receiverId===m.id)),'该成员有未完成采购，请先调整执行与验收安排');
+ }
+ return m;
+}
 export function reduceProject(original, action, actor, ctx) {
- const p=clone(original), a=action.data||{}, at=ctx.at, today=ctx.today||ctx.at.slice(0,10), mid=action.type==='ai.run.finish'&&ctx.aiSystemVerified ? {id:'system:ai',name:'AI任务服务'} : action.type==='member.join'&&ctx.inviteVerified ? p.members.find(m=>m.id===a.memberId&&m.email===actor.email) : getMember(p,actor), events=[];
+ const p=clone(original), a=action.data||{}, at=ctx.at, today=ctx.today||ctx.at.slice(0,10), mid=ctx.adminVerified&&action.type.startsWith('admin.') ? {id:actor.id,name:actor.name} : action.type==='ai.run.finish'&&ctx.aiSystemVerified ? {id:'system:ai',name:'AI任务服务'} : action.type==='member.join'&&ctx.inviteVerified ? p.members.find(m=>m.id===a.memberId&&m.email===actor.email) : getMember(p,actor), events=[];
  assert(ACTIONS[action.type],'不支持的操作',400);
+ assert((p.lifecycle||'active')==='active'||(ctx.adminVerified&&action.type==='admin.lifecycle')||(ctx.aiSystemVerified&&action.type==='ai.run.finish'),'项目已归档或放入回收站，当前只读；请由管理员恢复后再操作',409,'PROJECT_READ_ONLY');
  const notify=(title,body='',severity='info',target='',recipients=null)=>events.push({title,body,severity,target,recipients});
  const requirePartner=()=>partner(p,actor);
  const requireDraft=()=>{ requirePartner(); assert(p.ownerId===actor.id,'筹备期由创建人编辑，生效须全体确认',403); assert(p.status==='draft','正式生效后必须提交共同决策变更'); notBaselinePending(p); };
  const addEntry=(e)=>{ const v={id:ctx.id,at,actorId:mid.id,verifiedBy:null,verifiedAt:null,...e}; p.ledger.push(v); return v; };
  switch(action.type) {
+ case 'admin.lifecycle': {
+  assert(ctx.adminVerified,'缺少系统管理员授权',403);const before=p.lifecycle||'active';
+  const transitions={archive:['active','archived'],unarchive:['archived','active'],trash:[before,'trashed'],restore:['trashed','archived']};
+  const transition=transitions[a.action];assert(transition&&before===transition[0]&&before!==transition[1],'当前状态不可执行此操作',409);
+  p.lifecycle=transition[1];p.lifecycleHistory ||= [];p.lifecycleHistory.push({at,actorId:actor.id,actorName:actor.name,action:a.action,from:before,to:p.lifecycle,reason:proof(a.reason)});
+  notify(p.lifecycle==='trashed'?'项目已移入回收站':p.lifecycle==='archived'?'项目已归档（只读）':'项目已恢复可执行',a.reason+'；历史记录保留，实际合同、付款及任务责任不会因此消失。','warning');break;
+ }
+ case 'admin.member.role': {
+  assert(ctx.adminVerified,'缺少系统管理员授权',403);const m=validateRoleChange(p,a);
+  assert(!p.proposals.some(g=>g.status==='pending'),'请先完成或撤回现有共同决策，不能并行修改必签资格',409);
+  if(p.status==='draft'){m.role=a.role;if(a.role!=='partner')m.shareBps=0;notify('筹备项目成员权限已调整',m.name+'：'+a.role+'。筹备计划仍须全员确认。','warning','members');}
+  else{live(p);p.proposals.push({id:ctx.id,kind:'member_role',payload:{memberId:m.id,role:a.role,previousRole:m.role},reason:proof(a.reason),status:'pending',signers:snapshots(p),decisions:{},createdAt:at,creatorId:actor.id,adminInitiated:true});notify('管理员提出成员权限变更，等待全员确认','该操作尚未生效，原必签人仍保留表态权。','warning','decisions');}
+  break;
+ }
+
  case 'ai.materials': {
   requirePartner(); p.ai ||= {runs:[],reviews:[],briefHistory:[]};
   if(p.ai.brief)p.ai.briefHistory.push(p.ai.brief);
@@ -196,7 +227,7 @@ export function reduceProject(original, action, actor, ctx) {
   if(kind==='reconcile'){assert(finance(p).unverifiedCount===0,'请先复核所有账目');data.balanceCents=cents(data.balanceCents,'对账余额',true);assert(data.balanceCents===finance(p).verifiedCash,'外部余额与系统核实余额不一致，请先补记或更正差异');data.evidence=proof(data.evidence);data.ledgerHash=sha(p.ledger);}
   p.proposals.push({id:ctx.id,kind,payload:data,reason:proof(a.reason),status:'pending',signers,decisions:{},createdAt:at,creatorId:mid.id});notify('新的共同决策等待全员会签',a.reason,'warning','decisions');break;
  }
- case 'proposal.cancel': {requirePartner();const g=getById(p.proposals,a.id,'决策');assert(g.creatorId===mid.id,'仅发起人可撤回');assert(g.status==='pending','只能撤回待决策事项');g.status='cancelled';g.cancelReason=proof(a.reason);notify('共同决策已撤回',g.reason,'info','decisions');break;}
+ case 'proposal.cancel': {requirePartner();const g=getById(p.proposals,a.id,'决策');assert(g.creatorId===mid.id||(g.adminInitiated&&p.ownerId===actor.id),'仅发起人或该管理员提议的项目创建人可撤回');assert(g.status==='pending','只能撤回待决策事项');g.status='cancelled';g.cancelReason=proof(a.reason);notify('共同决策已撤回',g.reason,'info','decisions');break;}
  case 'proposal.vote': {
   requirePartner();const g=getById(p.proposals,a.id,'决策');assert(g.status==='pending','本轮决策已结束',409);assert(g.signers.some(s=>s.id===mid.id),'你不在本轮必签名单中',403);assert(['approve','reject'].includes(a.decision),'请同意或反对');assert(!g.decisions[mid.id],'你已提交本轮意见，不能覆盖历史决定',409);
   g.decisions[mid.id]={decision:a.decision,at,note:text(a.note,'决定说明',2000,a.decision==='reject')};
@@ -212,6 +243,7 @@ export function reduceProject(original, action, actor, ctx) {
    if(g.kind==='stage_open'){const s=stageFrom(p,d.stageId),i=p.stages.indexOf(s);assert(s.status==='locked','阶段已开放');assert(i===0||p.stages[i-1].status==='completed','必须先验收前一阶段，不能跳过验证直接扩大投入');s.status='open';}
    if(g.kind==='stage_close'){const s=stageFrom(p,d.stageId);assert(s.status==='open','仅可验收开放阶段');assert(p.tasks.filter(t=>t.stageId===s.id).every(t=>t.status==='done'),'本阶段还有未验收任务');assert(!p.purchases.some(q=>q.stageId===s.id&&['pending','approved','ordered'].includes(q.status)),'本阶段还有未完成采购');s.status='completed';s.evidence=d.evidence;}
    if(g.kind==='member_add')p.members.push(d.member);
+   if(g.kind==='member_role'){const m=validateRoleChange(p,d);m.role=d.role;if(d.role!=='partner')m.shareBps=0;}
    if(g.kind==='member_remove'){const m=getById(p.members,d.memberId,'成员');m.active=false;m.removedAt=at;}
    if(g.kind==='profit_rule')for(const m of partners(p))m.shareBps=d.shares[m.id];
    if(g.kind==='terms')p.settings.terms=d.terms;

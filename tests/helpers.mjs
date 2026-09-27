@@ -8,7 +8,7 @@ export async function fixture({partners=3,activate=true,fund=true}={}) {
  const client=()=>({cookie:'',csrf:'',user:null,async request(path,{method='GET',data,form,key=crypto.randomUUID(),headers={}}={}){
   const req=new Request('http://localhost:8787'+path,{method,headers:{origin:'http://localhost:8787',cookie:this.cookie,'x-csrf-token':this.csrf,'x-idempotency-key':key,...(form?{}:data?{'Content-Type':'application/json'}:{}),...headers},body:form|| (data?JSON.stringify(data):undefined)});
   const res=await worker.fetch(req,rt.env,rt.ctx);let body;const content=res.headers.get('content-type')||'';if(content.includes('json'))body=await res.json();else body=await res.text();
-  const cookie=res.headers.get('set-cookie');if(cookie)this.cookie=cookie.split(';')[0];if(body?.csrf)this.csrf=body.csrf;if(body?.user)this.user=body.user;
+  const cookie=res.headers.get('set-cookie');if(cookie)this.cookie=cookie.split(';')[0];if(body?.csrf)this.csrf=body.csrf;if(body?.user&&path.startsWith('/api/auth/'))this.user=body.user;
   return {status:res.status,body,headers:res.headers};
  },async ok(path,data,method='POST',key){const r=await this.request(path,{data,method,key});assert.ok(r.status>=200&&r.status<300,`${path} ${r.status} ${JSON.stringify(r.body)}`);return r.body;},async reauth(){return this.ok('/api/auth/reauth',{password:PASSWORD});}});
  const owner=client();await owner.ok('/api/auth/bootstrap',{token:'test-bootstrap-token-only',email:'owner@example.test',name:'项目负责人',password:PASSWORD});

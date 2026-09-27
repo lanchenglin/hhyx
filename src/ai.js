@@ -1,3 +1,4 @@
+import {resolveAiEnv} from './system-config.js';
 import { assert, AppError, body, json, now, sha } from './util.js';
 import { load, one, rows, mutate } from './store.js';
 import { partner, getMember } from './domain.js';
@@ -12,6 +13,7 @@ const system={id:'system:ai',name:'AI任务服务'};
 function currentHash(state,job){try{return buildSnapshot(state,job.kind,job.target_id||job.targetId).hash;}catch{return null;}}
 function publicJob(j,state){return {id:j.id,kind:j.kind,targetId:j.target_id,status:j.status,createdAt:j.created_at,finishedAt:j.finished_at,error:j.error,errorCode:j.error_code,snapshotHash:j.snapshot_hash,stale:currentHash(state,j)!==j.snapshot_hash};}
 export async function aiOverview(env,pid,state,offset=0) {
+ env=await resolveAiEnv(env);
  const engine=publicEngine(env);const items=await rows(env,'SELECT * FROM ai_jobs WHERE project_id=? ORDER BY created_at DESC,id DESC LIMIT 50 OFFSET ?',pid,offset);
  const count=await one(env,'SELECT COUNT(*) AS n FROM ai_jobs WHERE project_id=?',pid);
  return {engine,consented:aiConsentValid(state,engine),policy:state.ai?.policy||null,suspended:!!state.ai?.suspended,
@@ -20,6 +22,7 @@ export async function aiOverview(env,pid,state,offset=0) {
   budgetNotice:'UTC自然月；费用依据服务端人工配置的人民币费率估算，不是服务商账单。未知计费保留预占，应用额度不能代替服务商预算限制。'};
 }
 export async function requestAnalysis(env,pid,actor,a,key,{automatic=false}={}) {
+ env=await resolveAiEnv(env);
  assert(typeof key==='string'&&/^[a-zA-Z0-9_-]{12,100}$/.test(key),'缺少有效幂等键');
  const id=sha(`${pid}:${actor.id}:${key}`).slice(0,32),requestHash=sha(a);
  const {row,state}=await load(env,pid);const member=getMember(state,actor);
@@ -57,8 +60,10 @@ export async function runAiJob(env,id) {
  const claim=await env.DB.prepare("UPDATE ai_jobs SET status='running',lease_until=? WHERE id=? AND status='queued'").bind(Date.now()+60000,id).run();
  if(!claim.meta.changes)return;
  const j=await one(env,'SELECT * FROM ai_jobs WHERE id=?',id);
- const {state}=await load(env,j.project_id),engine=publicEngine(env);
- const allowed=aiConsentValid(state,engine)&&state.members.some(m=>m.active&&m.userId===j.actor_id);
+ const {state}=await load(env,j.project_id);
+ try{env=await resolveAiEnv(env);}catch{await finishRun(env,j,{status:'cancelled',errorCode:'AI_CONFIG_ERROR',error:'发送前配置不可用，未调用模型。'});return;}
+ const engine=publicEngine(env);const account=await one(env,'SELECT disabled,must_change_password FROM users WHERE id=?',j.actor_id);
+ const allowed=account&&!account.disabled&&!account.must_change_password&&aiConsentValid(state,engine)&&state.members.some(m=>m.active&&m.userId===j.actor_id);
  if(!allowed||currentHash(state,j)!==j.snapshot_hash||engine.fingerprint!==JSON.parse(j.engine).fingerprint) {
   await finishRun(env,j,{status:'cancelled',errorCode:'INPUT_OR_CONSENT_CHANGED',error:'发送前资料、成员或授权发生变化，已取消，未调用模型。'});return;
  }
@@ -73,6 +78,7 @@ export async function processAiJobs(env) {
  if(queued)await runAiJob(env,queued.id);
 }
 export async function autoAnalysis(env,pid,actor,action) {
+ env=await resolveAiEnv(env);
  const {state}=await load(env,pid),policy=state.ai?.policy;
  if(!policy||!aiConsentValid(state,publicEngine(env)))return;
  let kind,targetId;
@@ -89,7 +95,7 @@ export async function autoAnalysis(env,pid,actor,action) {
   await env.DB.prepare("INSERT OR IGNORE INTO notifications(id,project_id,user_id,title,body,target,severity,created_at) VALUES(?,?,?,'自动AI分析未启动',?,'ai','warning',?)").bind(token,pid,actor.id,error.message,now()).run();
  }
 }
-async function getReport(env,pid,id,state) {
+export async function getReport(env,pid,id,state) {
  const job=await one(env,'SELECT * FROM ai_jobs WHERE id=? AND project_id=?',id,pid);assert(job,'分析不存在或不属于本项目',404);
  const report=await one(env,'SELECT * FROM ai_reports WHERE job_id=? AND project_id=?',id,pid);
  const data=report?JSON.parse(report.report):null;
@@ -100,6 +106,7 @@ async function getReport(env,pid,id,state) {
   accounting:(state.ai?.runs||[]).find(x=>x.id===id),reviews:(state.ai?.reviews||[]).filter(x=>x.runId===id),linkedTasks:state.tasks.filter(t=>t.aiSource?.runId===id)};
 }
 export async function aiRoute(req,env,ctx,{pid,state,user,session,sub,url}) {
+ env=await resolveAiEnv(env);
  const method=req.method;
  if(sub==='ai'&&method==='GET')return json(await aiOverview(env,pid,state,Math.max(0,Math.min(10000,Number.parseInt(url.searchParams.get('offset')||'0',10)||0))));
  if(sub==='ai/preview'&&method==='POST') {
