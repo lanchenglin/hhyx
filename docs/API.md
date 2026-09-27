@@ -59,7 +59,7 @@ ledger.add / ledger.verify / ledger.reverse
 settlement.pay
 ```
 
-proposal支持：baseline、budget、stage_open、stage_close、member_add、member_remove、profit_rule、terms、resume、task_change、settlement、reconcile。字段和限制以 `src/domain.js` 的相应case为准；前端 `public/app.js` 提供完整调用实现，`tests/helpers.mjs` 提供三用户示例。
+proposal支持：ai_policy（仅专用AI接口建立）、baseline、budget、stage_open、stage_close、member_add、member_remove、profit_rule、terms、resume、task_change、settlement、reconcile。字段和限制以 `src/domain.js` 的相应case为准；前端 `public/app.js` 提供完整调用实现，`tests/helpers.mjs` 提供三用户示例。
 
 `member.join`、`attachment.add`、`channel.update`、`invite.create` 是经过专用接口验证后调用的内部type，普通actions接口明确拒绝，不能自行伪造。
 
@@ -96,3 +96,26 @@ proposal支持：baseline、budget、stage_open、stage_close、member_add、mem
 ## 开发文件
 
 `src/domain.js`业务约束；`store.js`事务/CAS/审计；`auth.js`会话；`notifications.js`投递；`index.js`路由/私有附件/安全头。`scripts/local-runtime.mjs`只是本地适配，不引入Worker生产入口。`migrations/0001_initial.sql`是首版数据库迁移。
+
+## AI分析接口（v1.1）
+
+所有路径前缀均为 `/api/projects/:pid`，沿用项目鉴权、同源/CSRF和幂等键规则。读取报告允许本项目全部有效成员；手动分析、授权提案、风险处置和建任务仅允许合伙人。重要写入需短时重新验证密码。
+
+| 方法/路径 | 输入与输出 |
+|---|---|
+| GET /ai?offset=0 | 模型公开配置（无Key）、项目授权、UTC月额度、50条分页历史/过期状态 |
+| POST /ai/preview | `{kind:"project"或"purchase"或"stage", targetId}`；返回真实脱敏body、hash、本地规则和预占费用，不发送模型 |
+| POST /ai/policy | `{engineFingerprint, confirmScope:true, monthlyCallLimit, monthlyBudgetCents, autoPurchase, autoStage}`；建立全员提案 |
+| POST /ai/runs | `{kind,targetId,previewHash,confirmSend:true}`；返回202排队或200复用及id；失败同输入重试须额外 `retry:true,acceptPossibleCharge:true` |
+| GET /ai/runs/:id | 冻结快照、报告、来源、模型配置、费用、处置记录与关联任务 |
+| GET /ai/runs/:id/export | 同上JSON附件，不含服务端密钥 |
+| POST /ai/runs/:id/reviews | `{findingId,disposition:"supplement"或"mitigate"或"accept_risk",note}`；追加记录，不改报告或采购批准 |
+| POST /ai/runs/:id/tasks | `{index,confirm:true,title,description,deliverable,stageId,assigneeId,reviewerId,dueDate}`；人工确认后使用原task.add规则，旧报告还须confirmStale:true |
+
+统一actions新增 `ai.materials`（六个业务说明字段和最多三行scenarios）、`ai.suspend`（停止新发送）。`ai.run.request`、`ai.run.finish`、`ai.review` 为内部验证动作，不能直接调用。`task.add` 的aiSource不可由普通actions伪造。
+
+AI任务状态：queued → running → completed/failed/uncertain；发送前授权或资料变化可cancelled。租约中断只标不确定，不自动重发。业务层/AI供应商没有删除历史报告的接口。
+
+403为项目/角色不符；409为预览/授权过期、幂等冲突或重试缺确认；429为费用/调用数/并发/速率限制；503为服务端模型未配置。错误不是风险分析结论。
+
+项目 `/export` 更新为schemaVersion 2，附 `aiManifest`（id/hash/详情链接）而不是内嵌所有AI输入。批量完整备份仍需D1导出，并另存R2。`src/ai-policy.js`授权配置，`ai-snapshot.js`脱敏和本地计算，`ai-provider.js`协议/报告校验，`ai.js`队列/API，`public/ai-ui.js`界面。初次和升级均须应用 `0002_ai_analysis.sql`。

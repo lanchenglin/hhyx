@@ -3,10 +3,11 @@ import { assert, AppError, body, json, now, uid, sha, token, email, text, hashPa
 import { authenticate, bootstrap, login, publicUser, startSession, originCheck, requireReauth, rateLimit, sessionCookie } from './auth.js';
 import { one, rows, load, readProject, newProject, mutate, auditRows, verifyAudit } from './store.js';
 import { getMember, partner, projectView } from './domain.js';
+import { aiRoute, autoAnalysis, processAiJobs } from './ai.js';
 import { validateWecom, kick, scheduled, deliverOne } from './notifications.js';
 
-const SENSITIVE = new Set(['proposal.vote','purchase.vote','purchase.order','purchase.pay','ledger.verify','ledger.reverse','project.pause','settlement.pay']);
-const INTERNAL = new Set(['member.join','attachment.add','channel.update','invite.create']);
+const SENSITIVE = new Set(['proposal.vote','purchase.vote','purchase.order','purchase.pay','ledger.verify','ledger.reverse','project.pause','settlement.pay','ai.suspend']);
+const INTERNAL = new Set(['member.join','attachment.add','channel.update','invite.create','ai.run.request','ai.run.finish','ai.review']);
 const MIME = new Set(['application/pdf','image/png','image/jpeg','image/webp','text/plain','text/csv','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
 const MAX_FILE=10*1024*1024;
 const keyOf=req=>req.headers.get('x-idempotency-key');
@@ -19,7 +20,7 @@ async function handle(req,env,ctx){
  if(!path.startsWith('/api/'))return env.ASSETS.fetch(req);
  if(method==='OPTIONS')return new Response(null,{status:405});
  if(!['GET','HEAD'].includes(method))originCheck(req,env);
- if(path==='/api/health'&&method==='GET')return json({ok:true,service:'coop-plan',version:'1.0.0'});
+ if(path==='/api/health'&&method==='GET')return json({ok:true,service:'coop-plan',version:'1.1.0'});
  if(path==='/api/auth/status'&&method==='GET')return json({initialized:!!await one(env,"SELECT value FROM settings WHERE key='bootstrapped'")});
  if(['/api/auth/bootstrap','/api/auth/login','/api/auth/accept'].includes(path)&&method==='POST') {
   await rateLimit(env,`auth-ip:${sha(req.headers.get('cf-connecting-ip')||'local')}`,60);
@@ -59,10 +60,11 @@ async function handle(req,env,ctx){
  match=routeMatch(path,/^\/api\/projects\/([^/]+)(?:\/(.*))?$/);
  if(!match)throw new AppError('接口不存在',404);
  const pid=match[1],sub=match[2]||'';const {state,row}=await load(env,pid);getMember(state,user);
+ if(sub==='ai'||sub.startsWith('ai/'))return aiRoute(req,env,ctx,{pid,state,user,session,sub,url});
  if(!sub&&method==='GET')return json({...projectView(state,user),revision:row.revision});
  if(sub==='actions'&&method==='POST') {
   const action=await body(req);assert(!INTERNAL.has(action.type),'不能直接调用内部操作',403);if(SENSITIVE.has(action.type))requireReauth(session);
-  const data=await mutate(env,pid,user,action,keyOf(req));ctx.waitUntil(kick(env,pid).catch(()=>{}));return json(data);
+  const data=await mutate(env,pid,user,action,keyOf(req));ctx.waitUntil(kick(env,pid).catch(()=>{}));if(['purchase.submit','proposal.vote'].includes(action.type))ctx.waitUntil(autoAnalysis(env,pid,user,action).catch(()=>{}));return json(data);
  }
  if(sub==='invites'&&method==='POST') {
   partner(state,user);const a=await body(req),m=state.members.find(m=>m.id===a.memberId&&m.active&&!m.userId);assert(m,'成员已加入或不存在');const t=token(),expires=Math.floor(Date.now()/1000)+7*86400;
@@ -75,7 +77,8 @@ async function handle(req,env,ctx){
  if(sub==='audit/verify'&&method==='GET'){const records=await auditRows(env,pid,0,10000);return json(verifyAudit(records,state,row.audit_head));}
  if(sub==='export'&&method==='GET') {
   const records=await auditRows(env,pid,0,10000);assert(records.length===row.revision,'审计记录超过单次导出限制，请使用数据库备份',409);
-  return json({schemaVersion:1,exportedAt:now(),project:state,revision:row.revision,audit:records,auditVerification:verifyAudit(records,state,row.audit_head),attachments:state.attachments.map(f=>({...f,downloadPath:`/api/projects/${pid}/files/${f.id}`}))},200,{'Content-Disposition':`attachment; filename="coop-${pid}.json"`});
+  const aiManifest=await rows(env,'SELECT id,kind,target_id,snapshot_hash,status,created_at,finished_at FROM ai_jobs WHERE project_id=? ORDER BY created_at',pid);
+  return json({schemaVersion:2,aiManifest:aiManifest.map(j=>({...j,downloadPath:`/api/projects/${pid}/ai/runs/${j.id}/export`})),exportedAt:now(),project:state,revision:row.revision,audit:records,auditVerification:verifyAudit(records,state,row.audit_head),attachments:state.attachments.map(f=>({...f,downloadPath:`/api/projects/${pid}/files/${f.id}`}))},200,{'Content-Disposition':`attachment; filename="coop-${pid}.json"`});
  }
  if(sub==='ledger.csv'&&method==='GET')return new Response(csv([['编号','日期','类型','金额(元)','说明','登记人','复核人','未经事前批准','凭证说明'],...state.ledger.map(e=>[e.id,e.at,e.kind,(e.amountCents/100).toFixed(2),e.description,state.members.find(m=>m.id===e.actorId)?.name,state.members.find(m=>m.id===e.verifiedBy)?.name,e.unauthorized?'是':'否',e.evidence])]),{headers:{'Content-Type':'text/csv; charset=utf-8','Content-Disposition':`attachment; filename="ledger-${pid}.csv"`}});
  if(sub==='files'&&method==='POST') {
@@ -108,6 +111,6 @@ function secure(response,req) {
 }
 export default {
  async fetch(req,env,ctx){try{return secure(await handle(req,env,ctx),req);}catch(e){if(e instanceof AppError)return secure(json({error:e.message,code:e.code},e.status),req);const id=uid();console.error('request_failed',id,e?.stack||e);return secure(json({error:'操作未完成，请刷新后重试或联系管理员',code:'INTERNAL_ERROR',requestId:id},500),req);}},
- async scheduled(controller,env,ctx){return scheduled(env);},
+ async scheduled(controller,env,ctx){await scheduled(env);await processAiJobs(env);},
  async queue(batch,env,ctx){for(const msg of batch.messages){try{await deliverOne(env,msg.body.id);msg.ack();}catch{msg.retry({delaySeconds:60});}}}
 };

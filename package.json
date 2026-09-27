@@ -1,9 +1,9 @@
 {
   "name": "coop-plan",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
-  "description": "合伙有序：多人会签、阶段预算、采购执行与审计留痕",
+  "description": "合伙有序：多人会签、阶段预算、采购执行、审计留痕与有依据的AI风险分析",
   "engines": {
     "node": ">=22.16.0"
   },

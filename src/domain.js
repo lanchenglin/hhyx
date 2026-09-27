@@ -1,7 +1,9 @@
 // 所有业务状态通过同一 reducer 修改；数据库以项目 revision 做 CAS，保证多名审批人并发时的预算与会签一致。
 import { assert, text, cents, email, date, sha } from './util.js';
+import { validateBrief, validatePolicy, aiConsentValid, aiUsage } from './ai-policy.js';
 
 export const ACTIONS = {
+ 'ai.materials':'更新分析补充资料','ai.suspend':'暂停外部AI发送','ai.run.request':'请求AI分析','ai.run.finish':'记录AI分析结果','ai.review':'记录AI风险处置',
  'plan.update':'修改筹备计划','member.remove':'移除筹备成员','member.add':'添加筹备成员','member.join':'成员接受邀请',
  'task.add':'创建任务','task.progress':'提交任务进度','task.accept':'验收任务',
  'proposal.submit':'提交共同决策','proposal.vote':'共同决策表态','proposal.cancel':'撤回共同决策',
@@ -105,13 +107,45 @@ function allocate(total,ms) {
  return result;
 }
 export function reduceProject(original, action, actor, ctx) {
- const p=clone(original), a=action.data||{}, at=ctx.at, today=ctx.today||ctx.at.slice(0,10), mid=action.type==='member.join'&&ctx.inviteVerified ? p.members.find(m=>m.id===a.memberId&&m.email===actor.email) : getMember(p,actor), events=[];
+ const p=clone(original), a=action.data||{}, at=ctx.at, today=ctx.today||ctx.at.slice(0,10), mid=action.type==='ai.run.finish'&&ctx.aiSystemVerified ? {id:'system:ai',name:'AI任务服务'} : action.type==='member.join'&&ctx.inviteVerified ? p.members.find(m=>m.id===a.memberId&&m.email===actor.email) : getMember(p,actor), events=[];
  assert(ACTIONS[action.type],'不支持的操作',400);
  const notify=(title,body='',severity='info',target='',recipients=null)=>events.push({title,body,severity,target,recipients});
  const requirePartner=()=>partner(p,actor);
  const requireDraft=()=>{ requirePartner(); assert(p.ownerId===actor.id,'筹备期由创建人编辑，生效须全体确认',403); assert(p.status==='draft','正式生效后必须提交共同决策变更'); notBaselinePending(p); };
  const addEntry=(e)=>{ const v={id:ctx.id,at,actorId:mid.id,verifiedBy:null,verifiedAt:null,...e}; p.ledger.push(v); return v; };
  switch(action.type) {
+ case 'ai.materials': {
+  requirePartner(); p.ai ||= {runs:[],reviews:[],briefHistory:[]};
+  if(p.ai.brief)p.ai.briefHistory.push(p.ai.brief);
+  p.ai.brief={version:(p.ai.brief?.version||0)+1,data:validateBrief(a),at,authorId:mid.id};
+  notify('项目分析补充资料已更新','补充资料不修改原批准计划，旧分析将按输入变化标记过期。','info','ai');break;
+ }
+ case 'ai.suspend': {
+  requirePartner();p.ai ||= {runs:[],reviews:[],briefHistory:[]};p.ai.suspended=true;
+  notify('已暂停后续外部AI发送','已发出的请求无法撤回；恢复须重新全员确认。','warning','ai');break;
+ }
+ case 'ai.run.request': {
+  assert(ctx.aiVerified,'分析请求未经服务端校验',403);canWork(p,actor);
+  assert(aiConsentValid(p,ctx.aiEngine),'尚未全员确认当前模型/发送范围，或已暂停；未发送数据',409);
+  const u=aiUsage(p,at.slice(0,7)), policy=p.ai.policy;
+  assert(!p.ai.runs.some(j=>['queued','running'].includes(j.status)),'本项目已有分析排队/运行中，请先查看其结果',409);
+  assert(p.ai.runs.length<1000,'分析记录达到本版上限，请导出归档',409);
+  assert(u.calls+1<=policy.monthlyCallLimit,'已达到项目月调用上限',429);
+  assert(u.budgetUsedCents+a.reserveCents<=policy.monthlyBudgetCents,'本次保守费用预占将超过月预算，未调用模型',429);
+  p.ai.runs.push({...a,status:'queued',month:at.slice(0,7),createdAt:at,actorId:mid.id,chargeCents:null,usage:null});
+  notify('已请求项目AI分析','报告只辅助判断，不代表批准；同一输入将复用已有有效报告。','info','ai');break;
+ }
+ case 'ai.run.finish': {
+  assert(ctx.aiSystemVerified,'仅任务服务可写入分析结果',403);const run=getById(p.ai?.runs||[],a.id,'分析');
+  assert(['queued','running'].includes(run.status),'该分析已结束',409);
+  assert(['completed','failed','uncertain','cancelled'].includes(a.status),'分析结果状态不正确');
+  Object.assign(run,{status:a.status,finishedAt:at,error:a.error||null,errorCode:a.errorCode||null,usage:a.usage||null,chargeCents:a.chargeCents,reportHash:a.reportHash||null});
+  notify(a.status==='completed'?'AI分析报告已生成':'AI分析未完成',a.status==='completed'?'请查看来源、风险和待共同决定事项；AI没有投票权。':a.error||'未形成有效结论','info','ai');break;
+ }
+ case 'ai.review': {
+  requirePartner();assert(ctx.aiReviewVerified,'风险处置对象未核验',403);p.ai.reviews.push({id:ctx.id,at,memberId:mid.id,runId:a.runId,findingId:a.findingId,disposition:a.disposition,note:proof(a.note)});
+  notify('新增AI风险处置说明','该说明不代替采购会签或预算变更。','info','ai');break;
+ }
  case 'plan.update': {
   requireDraft(); p.name=text(a.name??p.name,'项目名称',100); p.description=text(a.description??p.description,'项目说明',3000,false);
   p.settings.totalBudgetCents=cents(a.totalBudgetCents??p.settings.totalBudgetCents,'总预算'); p.settings.minReserveCents=cents(a.minReserveCents??p.settings.minReserveCents,'保留资金',true);
@@ -131,7 +165,8 @@ export function reduceProject(original, action, actor, ctx) {
  case 'task.add': {
   requirePartner(); assert(p.status!=='completed','项目已结束'); stageFrom(p,a.stageId);
   assert(activeMembers(p).some(m=>m.id===a.assigneeId&&m.role!=='viewer'),'负责人无效'); assert(activeMembers(p).some(m=>m.id===a.reviewerId&&m.role!=='viewer'),'验收人无效'); assert(a.assigneeId!==a.reviewerId,'任务负责人和验收人不能相同');
-  p.tasks.push({id:ctx.id,title:text(a.title,'任务名称',150),description:text(a.description,'任务说明',3000,false),deliverable:text(a.deliverable,'交付成果/标准',2000),stageId:a.stageId,assigneeId:a.assigneeId,reviewerId:a.reviewerId,dueDate:date(a.dueDate,true),status:'todo',updates:[],createdAt:at});
+  if(a.aiSource){assert(ctx.aiTaskVerified,'AI任务来源未经校验',403);assert(!p.tasks.some(t=>t.aiSource?.runId===a.aiSource.runId&&t.aiSource?.index===a.aiSource.index),'此建议已建立任务，不能重复创建',409);}
+  p.tasks.push({id:ctx.id,...(a.aiSource?{aiSource:a.aiSource}:{}),title:text(a.title,'任务名称',150),description:text(a.description,'任务说明',3000,false),deliverable:text(a.deliverable,'交付成果/标准',2000),stageId:a.stageId,assigneeId:a.assigneeId,reviewerId:a.reviewerId,dueDate:date(a.dueDate,true),status:'todo',updates:[],createdAt:at});
   notify('新增执行任务',a.title,'info','tasks'); break;
  }
  case 'task.progress': {
@@ -144,10 +179,11 @@ export function reduceProject(original, action, actor, ctx) {
  case 'project.pause': {requirePartner();live(p);p.status='paused';p.pauseReason=proof(a.reason);notify('项目紧急暂停',p.pauseReason,'critical');break;}
  case 'proposal.submit': {
   requirePartner(); assert(!p.proposals.some(g=>g.status==='pending'),'请先完成或撤回现有共同决策，避免相互冲突',409);
-  const kind=a.kind; assert(['baseline','budget','stage_open','stage_close','member_add','member_remove','profit_rule','terms','resume','task_change','settlement','reconcile'].includes(kind),'决策类型不支持');
+  const kind=a.kind; assert(['baseline','budget','stage_open','stage_close','member_add','member_remove','profit_rule','terms','resume','task_change','settlement','reconcile','ai_policy'].includes(kind),'决策类型不支持');
   if(kind==='baseline'){assert(p.status==='draft','基准计划已生效');verifyStages(p.stages,p.settings.totalBudgetCents);validShares(p);assert(p.settings.terms.length>=10,'请填写合作约定（职责、决策权、退出和分配规则）');}
-  else live(p);
+  else if(kind!=='ai_policy')live(p);
   const data=clone(a.payload||{}); const signers=snapshots(p);
+  if(kind==='ai_policy'){assert(ctx.aiPolicyVerified,'AI启用范围必须经专用接口校验',403);Object.assign(data,validatePolicy(data));}
   if(kind==='baseline'){data.plan={settings:clone(p.settings),stages:clone(p.stages),members:clone(p.members),name:p.name,description:p.description};}
   if(kind==='budget') {data.totalBudgetCents=cents(data.totalBudgetCents,'新总预算');data.minReserveCents=cents(data.minReserveCents,'新保留资金',true);assert(data.minReserveCents<=data.totalBudgetCents,'保留资金过大');assert(data.stageBudgets&&typeof data.stageBudgets==='object','需提供各阶段预算');const ss=p.stages.map(s=>({...s,budgetCents:cents(data.stageBudgets[s.id],'新阶段预算',true)}));verifyStages(ss,data.totalBudgetCents);}
   if(['stage_open','stage_close'].includes(kind)){stageFrom(p,data.stageId);data.evidence=proof(data.evidence);}
@@ -167,6 +203,7 @@ export function reduceProject(original, action, actor, ctx) {
   if(a.decision==='reject'){g.status='rejected';notify('共同决策未通过',g.reason,'warning','decisions');break;}
   if(g.signers.every(s=>g.decisions[s.id]?.decision==='approve')){
    const d=g.payload;
+   if(g.kind==='ai_policy'){p.ai ||= {runs:[],reviews:[],briefHistory:[]};p.ai.policy={...clone(d),signerIds:g.signers.map(s=>s.id),approvedAt:at,proposalId:g.id};p.ai.suspended=false;}
    if(g.kind==='baseline'){p.status='active';p.baseline={...clone(d.plan),approvedAt:at,proposalId:g.id};p.stages[0].status='open';}
    if(g.kind==='budget'){
     assert(d.totalBudgetCents>=finance(p).budgetUsed,'新总预算低于当前采购承诺与已发生支出');

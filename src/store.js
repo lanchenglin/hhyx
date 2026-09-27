@@ -42,6 +42,7 @@ export async function mutate(env,pid,actor,action,key,options={}) {
   if(previous){assert(previous.request_hash===reqHash,'同一个幂等键不能提交不同内容',409);return {...await readProject(env,pid,actor),idempotent:true};}
   const {row,state}=await load(env,pid);
   const ctx={id:op.slice(0,32),at,today:new Intl.DateTimeFormat('sv-SE',{timeZone:env.TZ||'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(at)),...options};
+  if(options.requiredRevision!=null)assert(row.revision===options.requiredRevision,'项目资料同时发生变化，请刷新后重新分析',409);
   const result=reduceProject(state,action,actor,ctx),next=result.state;
   const revision=row.revision+1,afterHash=sha(next),guard=uid();
   const c=auditContent(pid,revision,actor,action.type,action.data||{},result.summary,sha(state),afterHash,row.audit_head,at),recordHash=sha(c);

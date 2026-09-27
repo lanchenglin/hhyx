@@ -34,3 +34,12 @@ https://help.aliyun.com/en/cmn/developer-reference/signature-mechanism
 ```
 
 企业微信接口接入采用官方主机的内部群机器人Webhook。本版会验证域名、路径并只在收到errcode=0时标记服务商接受。是否允许添加机器人、频率和成员限制，应在用户的企业微信环境中核实；未做真实群推送测试。
+
+## v1.1 AI实现参考（核对日期：2026-09-27）
+
+- OpenAI Structured Outputs（Chat Completions response_format）：https://developers.openai.com/api/docs/guides/structured-outputs
+- Anthropic Structured Outputs（output_config.format、支持的schema子集及截断/拒绝）：https://platform.claude.com/docs/en/build-with-claude/structured-outputs
+- Anthropic Messages API：https://platform.claude.com/docs/en/api/messages/create
+- Cloudflare Workers context / waitUntil：https://developers.cloudflare.com/workers/runtime-apis/context/
+
+接口文档参考不代表已用真实账号测试；本版报告schema刻意仅采用基础类型/required/enum/对象禁止额外字段等共同子集，本地另做长度、引用和业务校验。报价与模型ID不写死，部署者应核对其账户当时可用模型与费率。
