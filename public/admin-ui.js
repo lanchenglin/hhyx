@@ -1,23 +1,25 @@
+import { createOperationsUI } from './ops-ui.js';
 // The UI hides administration for non-admins; every corresponding API also checks
 // the current account, CSRF, recent reauthentication and optimistic revisions.
-export function createAdminUI({S,e,api,reauth,showForm,showInfo,render,btn,panel,money,shortDate,toast,toCents,amountInput}){
- const tabs=[['overview','管理总览'],['projects','项目与回收站'],['users','用户与权限'],['ai','AI模型配置'],['audit','管理员日志']];
+export function createAdminUI({S,e,api,reauth,showForm,showInfo,render,btn,panel,money,shortDate,toast,toCents,amountInput,openSecurity}){
+ const tabs=[['overview','管理总览'],['projects','项目与回收站'],['users','用户与权限'],['ai','AI模型配置'],['security','二次验证'],['backups','备份与恢复'],['notification-settings','通知服务商'],['delivery','投递与告警'],['audit','管理员日志']];
  const life={active:'正常项目',archived:'已归档（只读）',trashed:'回收站'},roles={partner:'合伙人',operator:'执行成员',viewer:'只读成员'};
  let tab='overview',data=null,filter='active',query='',offset=0,before=0;
  const base='/api/admin';
+ const OPS=createOperationsUI({S,e,api,reauth,showForm,showInfo,btn,panel,money,shortDate,toast,openSecurity});
  const button=(title,action,attrs='',cls='')=>btn(title,'admin-'+action,attrs,cls);
  const fieldReason={name:'reason',label:'操作原因（写入管理员日志）',type:'textarea',full:true,maxLength:1000};
  function reset(){tab='overview';data=null;filter='active';query='';offset=0;before=0;}
  async function load(){
-  const routes={overview:'/overview',projects:`/projects?lifecycle=${filter}&q=${encodeURIComponent(query)}&offset=${offset}`,users:`/users?q=${encodeURIComponent(query)}&offset=${offset}`,ai:'/ai-settings',audit:`/audit?before=${before}`};
+  const routes={overview:'/overview',projects:`/projects?lifecycle=${filter}&q=${encodeURIComponent(query)}&offset=${offset}`,users:`/users?q=${encodeURIComponent(query)}&offset=${offset}`,ai:'/ai-settings',security:'/security',backups:'/backups','notification-settings':'/notification-settings',delivery:'/delivery',audit:`/audit?before=${before}`};
   const expected=tab;const result=await api(base+routes[tab]);if(tab===expected)data=result;
  }
- async function open(section='overview'){if(S.user?.systemRole!=='admin')throw Error('仅系统管理员可以访问');S.adminMode=true;tab=section;offset=0;before=0;query='';data=null;await load();render();}
+ async function open(section='overview'){if(S.user?.systemRole!=='admin')throw Error('仅系统管理员可以访问');S.adminMode=true;tab=section;offset=0;before=0;query='';data=null;try{await load();render();}catch(err){S.adminMode=false;render();throw err;}}
  async function refresh(){await load();render();}
  function pager(){const next=data.nextOffset??data.nextBefore;return `<div class="admin-pagination">${offset||before?button('返回第一页','first','','small'):''}${next!=null?button('下一页','next',`data-next="${next}"`,'small'):''}</div>`;}
  function card(title,value,note){return `<section class="metric"><div class="metric-label">${e(title)}</div><div class="metric-value">${e(value)}</div><p class="metric-note">${e(note)}</p></section>`;}
  function page(){
-  let html=`<div class="page-head"><div><div class="eyebrow">SYSTEM ADMIN / V1.2.0</div><h1>系统管理</h1><p>管理账号、项目生命周期和平台配置；不代替任何合伙人审批。</p></div><div class="buttons">${button('刷新','refresh','','small')}${button('返回我的项目','exit','','small')}</div></div>`;
+  let html=`<div class="page-head"><div><div class="eyebrow">SYSTEM ADMIN / V1.3.0</div><h1>系统管理</h1><p>管理账号、项目生命周期和平台配置；不代替任何合伙人审批。</p></div><div class="buttons">${button('刷新','refresh','','small')}${button('返回我的项目','exit','','small')}</div></div>`;
   html+=`<nav class="admin-tabs" aria-label="系统管理栏目">${tabs.map(([id,title])=>button(title,'tab',`data-section="${id}" aria-current="${tab===id?'page':'false'}"`,tab===id?'primary':'')).join('')}</nav>`;
   if(!data)return html+'<p>正在读取管理数据…</p>';
   if(tab==='overview'){
@@ -43,6 +45,7 @@ export function createAdminUI({S,e,api,reauth,showForm,showInfo,render,btn,panel
    html+='<div class="alert info">保存不会发起模型调用。修改接收方、Model、费率、Key或启用状态后，项目需重新全员确认AI规则。成员仍能看到自己项目将发送给谁及费用依据，但看不到密钥或编辑控件。</div>';
   }
   if(tab==='audit')html+=panel('管理员操作日志',`<div class="panel-body">${data.records.map(x=>`<article class="comment"><div class="comment-meta"><span>#${x.sequence} · ${e(x.actor_name)}</span><time>${shortDate(x.created_at)}</time></div><strong>${e(x.action)}</strong><p class="admin-wrap">对象：${e(x.target_id||'系统')}</p><pre class="admin-json">${e(JSON.stringify(x.details,null,2))}</pre></article>`).join('')||'<p>暂无管理操作记录。</p>'}</div>`)+pager()+'<p class="muted">日志为应用层只追加记录，不是第三方不可篡改存证。用户密码、API Key不会写入日志。</p>';
+  html+=OPS.page(tab,data);
   return html;
  }
  async function save(path,body){await reauth();return api(base+path,{method:'POST',body});}
@@ -61,6 +64,7 @@ export function createAdminUI({S,e,api,reauth,showForm,showInfo,render,btn,panel
   },{intro:'系统权限和项目身份分开管理。这里不能替用户投票、直接抹掉旧意见，或读取其密码。'});
  }
  async function action(name,el){
+  if(name.startsWith('admin-ops-'))return OPS.action(name,el,{data,refresh});
   if(name==='admin-open')return open(el.dataset.section||'overview');
   if(name==='admin-tab'){tab=el.dataset.section;offset=0;before=0;query='';return refresh();}
   if(name==='admin-exit'){S.adminMode=false;render();return;}
@@ -97,7 +101,7 @@ export function createAdminUI({S,e,api,reauth,showForm,showInfo,render,btn,panel
    }
    const op=el.dataset.operation,title={archive:'归档项目',unarchive:'取消归档',trash:'删除到回收站',restore:'从回收站恢复到归档'}[op];
    showForm(title,[
-    {name:'impact',label:'当前待处理事项',type:'html',full:true,html:`<div class="alert warn">待审批 ${v.obligations.pendingApprovals}，未完成任务 ${v.obligations.unfinishedTasks}，执行中采购 ${v.obligations.unfinishedPurchases}，待复核账目 ${v.obligations.unverifiedEntries}，已登记应付 ${money(v.obligations.payableCents)}。</div>`},
+    {name:'impact',label:'当前待处理事项',type:'html',full:true,html:`<div class="alert warn">待退出清算 ${v.obligations.exitSettlements||0}，清算预占 ${money(v.obligations.exitHoldCents||0)}，待审批 ${v.obligations.pendingApprovals}，未完成任务 ${v.obligations.unfinishedTasks}，执行中采购 ${v.obligations.unfinishedPurchases}，待复核账目 ${v.obligations.unverifiedEntries}，已登记应付 ${money(v.obligations.payableCents)}。</div>`},
     {name:'confirmName',label:'准确输入项目名称：'+p.name,full:true},{name:'confirmImpact',label:'确认影响',type:'checkbox',full:true,checkboxText:'我理解归档/删除会停止新操作，不会消灭真实债务或历史责任；回收站可以恢复，不物理清库'},fieldReason
    ],async a=>{if(!a.confirmImpact)throw Error('请先确认影响');await save('/projects/'+p.id+'/lifecycle',{...a,confirmImpact:true,expectedRevision:v.revision,action:op});S.projects=(await api('/api/projects')).projects;if(S.project?.id===p.id)S.project=null;await refresh();toast('项目状态已更新，历史数据保留');},{intro:'回收站恢复后先保持归档只读，需要另行取消归档才能继续执行。',submit:'确认'+title});return;
   }

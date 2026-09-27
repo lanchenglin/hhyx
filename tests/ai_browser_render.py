@@ -7,7 +7,8 @@ from playwright.sync_api import sync_playwright
 root=pathlib.Path(__file__).resolve().parents[1];out=root/'artifacts';out.mkdir(exist_ok=True)
 f=json.loads((out/'ai-visual-fixture.json').read_text())
 css=(root/'public/styles.css').read_text()+'\n'+(root/'public/mobile.css').read_text()+'\n'+(root/'public/admin.css').read_text();svg='data:image/svg+xml,'+urllib.parse.quote((root/'public/favicon.svg').read_text())
-code=(root/'public/admin-ui.js').read_text().replace('export function','function')+'\n'+(root/'public/ai-ui.js').read_text().replace('export function','function')+'\n'+(root/'public/app.js').read_text().replace("import { createAdminUI } from './admin-ui.js';",'').replace("import { createAiUI } from './ai-ui.js';",'').replace('/favicon.svg',svg)
+from frontend_bundle import frontend_bundle
+code = frontend_bundle(root, svg)
 checks=[];errors=[]
 with sync_playwright() as pw:
  b=pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH','/usr/bin/chromium'),headless=True,args=['--no-sandbox','--disable-dev-shm-usage'])

@@ -30,3 +30,16 @@ ALIYUN_SMS_TEMPLATE_CODE=
 # INITIAL_ADMIN_EMAIL=admin@example.com
 # 老站点迁移提升原初始化用户为admin，原密码不变；不再创建默认账号。
 # AI可改为在“系统管理 → AI模型配置”设置，此后数据库加密配置优先。
+
+# v1.3：可选加密备份 / 恢复演练（默认不启用，不影响原项目）
+# 备份根密钥与CONFIG_ENCRYPTION_KEY独立，32字节随机值base64，仅Secret。
+# BACKUP_ENCRYPTION_KEY=（私下随机生成，不与配置根密钥相同）
+# 可选旧密钥环：JSON对象，键为后台展示的旧指纹，值为该旧密钥的base64。
+# BACKUP_OLD_KEYS_JSON=（仅Secret，不提交Git，不输出日志）
+# 下列名称必须等于Wrangler内真实绑定的bucket_name，且三个桶各不相同。
+# FILES_BUCKET_NAME=coop-plan-private
+# BACKUP_BUCKET_NAME=coop-plan-backups-private
+# RESTORE_BUCKET_NAME=coop-plan-drill-private
+# 正式还须独立绑定BACKUPS、RESTORE_DB、RESTORE_FILES；详见OPERATIONS_V1_3.md。
+# MFA根密钥继续使用CONFIG_ENCRYPTION_KEY；不能在已有绑定后随意更换。
+# 通知服务商可在系统管理中设置，此后数据库配置优先，无需在浏览器保存密钥。

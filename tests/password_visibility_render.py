@@ -8,7 +8,8 @@ ROOT=Path(__file__).resolve().parents[1]; OUT=ROOT/'artifacts';OUT.mkdir(exist_o
 css='\n'.join((ROOT/'public'/n).read_text() for n in ['styles.css','mobile.css','admin.css'])
 svg='data:image/svg+xml,'+urllib.parse.quote((ROOT/'public/favicon.svg').read_text())
 html=(ROOT/'public/index.html').read_text().replace('<link rel="stylesheet" href="/styles.css">','<style>'+css+'</style>').replace('<link rel="stylesheet" href="/mobile.css">','').replace('<link rel="stylesheet" href="/admin.css">','').replace('<script type="module" src="/app.js"></script>','').replace('/favicon.svg',svg)
-code='\n'.join((ROOT/'public'/n).read_text().replace('export function','function') for n in ['admin-ui.js','ai-ui.js'])+'\n'+(ROOT/'public/app.js').read_text().replace("import { createAdminUI } from './admin-ui.js';",'').replace("import { createAiUI } from './ai-ui.js';",'').replace('/favicon.svg',svg)
+from frontend_bundle import frontend_bundle
+code = frontend_bundle(ROOT, svg)
 SETUP=r'''()=>{
  window.testWrites=[];window.testStorage={};window.failNextPassword=false;
  if(!crypto.randomUUID)Object.defineProperty(crypto,'randomUUID',{value:()=>String(Math.random())});

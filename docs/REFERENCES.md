@@ -43,3 +43,15 @@ https://help.aliyun.com/en/cmn/developer-reference/signature-mechanism
 - Cloudflare Workers context / waitUntil：https://developers.cloudflare.com/workers/runtime-apis/context/
 
 接口文档参考不代表已用真实账号测试；本版报告schema刻意仅采用基础类型/required/enum/对象禁止额外字段等共同子集，本地另做长度、引用和业务校验。报价与模型ID不写死，部署者应核对其账户当时可用模型与费率。
+
+
+## v1.3 实现参考
+
+- IETF RFC 6238（TOTP）：https://www.rfc-editor.org/rfc/rfc6238
+- OWASP MFA Cheat Sheet：https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html
+- Cloudflare D1 批次与事务：https://developers.cloudflare.com/d1/worker-api/d1-database/
+- Cloudflare D1 导入导出：https://developers.cloudflare.com/d1/best-practices/import-export-data/
+- R2 Workers API：https://developers.cloudflare.com/r2/api/workers/workers-api-reference/
+- 阿里云 SendSms：https://help.aliyun.com/zh/sms/developer-reference/api-dysmsapi-2017-05-25-sendsms
+
+这些文档是实现依据，不是对本项目真实云端、服务商账户或生产恢复验收的证明。

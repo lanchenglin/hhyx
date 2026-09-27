@@ -1,6 +1,7 @@
 import { assert, now, sha, token, uid, safeEqual, hashPassword, verifyPassword, text, email } from './util.js';
+import { mfaEnabled } from './mfa.js';
 import { one } from './store.js';
-export const publicUser = u => ({id:u.id,email:u.email,name:u.name,phone:u.phone||'',smsOptIn:!!u.sms_opt_in,username:u.username||'',systemRole:u.system_role||'member',disabled:!!u.disabled,canCreateProjects:u.can_create_projects!==0,mustChangePassword:!!u.must_change_password});
+export const publicUser = u => ({id:u.id,email:u.email,name:u.name,phone:u.phone||'',smsOptIn:!!u.sms_opt_in,username:u.username||'',systemRole:u.system_role||'member',disabled:!!u.disabled,canCreateProjects:u.can_create_projects!==0,mustChangePassword:!!u.must_change_password,mfaEnabled:!!u.mfaEnabled,mfaRequired:!!u.mfaRequired});
 export async function rateLimit(env,key,limit=12,seconds=900){
  const epoch=Math.floor(Date.now()/1000), bucket=`${key}:${Math.floor(epoch/seconds)}`;
  await env.DB.prepare('INSERT INTO rate_limits(key,count,expires_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=count+1').bind(bucket,epoch+seconds).run();
@@ -12,17 +13,19 @@ export function originCheck(req,env) {
 }
 function cookieName(req){return new URL(req.url).protocol==='https:'?'__Host-coop_session':'coop_session';}
 export function sessionCookie(req,value,maxAge=43200){const secure=new URL(req.url).protocol==='https:';return `${cookieName(req)}=${value}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secure?'; Secure':''}`;}
-export async function startSession(env,req,user) {
- const t=token(),csrf=token(),expires=Math.floor(Date.now()/1000)+43200;
- await env.DB.prepare('INSERT INTO sessions(token_hash,user_id,csrf,expires_at,reauth_at,auth_version) VALUES(?,?,?,?,0,?)').bind(sha(t),user.id,csrf,expires,user.auth_version||0).run();
- return {user:publicUser(user),csrf,cookie:sessionCookie(req,t)};
+export async function startSession(env,req,user,{factorVersion=0}={}) {
+ const factor=await one(env,'SELECT version,secret_encrypted FROM mfa_credentials WHERE user_id=?',user.id);
+ const mfaRequired=!!factor?.secret_encrypted&&factor.version!==factorVersion;
+ const t=token(),csrf=token(),expires=Math.floor(Date.now()/1000)+(mfaRequired?300:43200);
+ await env.DB.prepare('INSERT INTO sessions(token_hash,user_id,csrf,expires_at,reauth_at,auth_version,mfa_version,mfa_at) VALUES(?,?,?,?,0,?,?,?)').bind(sha(t),user.id,csrf,expires,user.auth_version||0,factorVersion,factorVersion?Math.floor(Date.now()/1000):0).run();
+ return {user:{...publicUser(user),mfaEnabled:!!factor?.secret_encrypted,mfaRequired},csrf,cookie:sessionCookie(req,t,mfaRequired?300:43200)};
 }
 export async function authenticate(env,req,csrfRequired=false) {
  const cookies=Object.fromEntries((req.headers.get('cookie')||'').split(';').map(s=>s.trim().split('=')));
  const raw=cookies[cookieName(req)]||'';assert(raw,'请先登录',401,'AUTH_REQUIRED');
- const hash=sha(raw),row=await one(env,'SELECT s.*,u.email,u.name,u.password_hash,u.phone,u.sms_opt_in,u.username,u.system_role,u.disabled,u.can_create_projects,u.must_change_password,u.auth_version AS account_version FROM sessions s JOIN users u ON u.id=s.user_id WHERE token_hash=? AND expires_at>? AND u.disabled=0 AND s.auth_version=u.auth_version',hash,Math.floor(Date.now()/1000));
+ const hash=sha(raw),row=await one(env,'SELECT s.*,u.email,u.name,u.password_hash,u.phone,u.sms_opt_in,u.username,u.system_role,u.disabled,u.can_create_projects,u.must_change_password,u.auth_version AS account_version,m.version AS factor_version,m.secret_encrypted AS factor_secret FROM sessions s JOIN users u ON u.id=s.user_id LEFT JOIN mfa_credentials m ON m.user_id=u.id WHERE token_hash=? AND expires_at>? AND u.disabled=0 AND s.auth_version=u.auth_version',hash,Math.floor(Date.now()/1000));
  assert(row,'登录已过期，请重新登录',401,'AUTH_REQUIRED');if(csrfRequired)assert(safeEqual(req.headers.get('x-csrf-token'),row.csrf),'安全校验失败，请刷新后重试',403,'CSRF_FAILED');
- return {user:{id:row.user_id,email:row.email,name:row.name,password_hash:row.password_hash,phone:row.phone,sms_opt_in:row.sms_opt_in,username:row.username,system_role:row.system_role,disabled:row.disabled,can_create_projects:row.can_create_projects,must_change_password:row.must_change_password,auth_version:row.account_version},session:{hash,csrf:row.csrf,reauthAt:row.reauth_at}};
+ return {user:{id:row.user_id,email:row.email,name:row.name,password_hash:row.password_hash,phone:row.phone,sms_opt_in:row.sms_opt_in,username:row.username,system_role:row.system_role,disabled:row.disabled,can_create_projects:row.can_create_projects,must_change_password:row.must_change_password,auth_version:row.account_version,mfaEnabled:!!row.factor_secret,mfaRequired:!!row.factor_secret&&row.mfa_version!==row.factor_version},session:{hash,csrf:row.csrf,reauthAt:row.reauth_at,mfaEnabled:!!row.factor_secret,mfaRequired:!!row.factor_secret&&row.mfa_version!==row.factor_version,mfaAt:row.mfa_at,mfaVersion:row.mfa_version}};
 }
 export const requireReauth = session => assert(session.reauthAt>=Math.floor(Date.now()/1000)-300,'重要操作请重新输入密码确认身份',403,'REAUTH_REQUIRED');
 export async function bootstrap(env,a,req){

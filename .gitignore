@@ -12,3 +12,10 @@ artifacts/
 *.sqlite*
 *.log
 .DS_Store
+
+# Sensitive backup archives / local restore data and Python caches
+__pycache__/
+*.pyc
+*.hhyx.tar
+restore-drills/
+backup-local/

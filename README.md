@@ -4,6 +4,12 @@
 
 不是记事本，也不是实际付款系统。每笔采购默认由**全体已加入的合伙人**明确批准，不开放“超时视为同意”或管理员强行放行的入口。
 
+## v1.3.0：账号安全、备份恢复、通知和合作交接
+
+已经新增账号TOTP动态验证码与一次性恢复码、管理员可选强制策略；每日加密备份与真正写入独立D1/R2的数据恢复演练、离线归档恢复工具；全站企业微信/阿里云短信配置和投递告警；项目负责人移交、全员会签的退出清算向导。手机和电脑均有对应入口，AI及系统管理员仍不能代签采购或自动付款。
+
+本版须先应用增量迁移 `0004_operations_security.sql`；备份需要另外授权创建专属资源和独立Secret。MFA全站强制、自动备份、自动演练都不默认开启，升级不重置账号密码。功能与限制见 [`docs/OPERATIONS_V1_3.md`](docs/OPERATIONS_V1_3.md)，实际测试和未测项见 [`docs/ACCEPTANCE_V1_3.md`](docs/ACCEPTANCE_V1_3.md)。
+
 ## v1.2.0：系统管理员后台
 
 新增 **系统管理 → 管理总览 / 项目与回收站 / 用户与权限 / AI模型配置 / 管理员日志**，手机和电脑使用同一入口。
@@ -12,7 +18,7 @@
 
 **升级必须先执行新迁移 `0003_administration.sql`。原初始化账号增加 `admin` 用户名和系统管理权限，原密码保留，不覆盖已有数据。** 新站点可以显式注入初始管理员临时密码Secret，首登强制修改；公开源码没有共享默认密码。
 
-操作、权限矩阵、默认管理员说明、已实现/后续规划：[`docs/ADMINISTRATION.md`](docs/ADMINISTRATION.md)。升级与真实验收：[`docs/HERMES_DEPLOY.md`](docs/HERMES_DEPLOY.md)、[`docs/ACCEPTANCE_ADMIN.md`](docs/ACCEPTANCE_ADMIN.md)。
+操作、权限矩阵、默认管理员说明、管理基础与边界：[`docs/ADMINISTRATION.md`](docs/ADMINISTRATION.md)。升级与真实验收：[`docs/HERMES_DEPLOY.md`](docs/HERMES_DEPLOY.md)、[`docs/ACCEPTANCE_ADMIN.md`](docs/ACCEPTANCE_ADMIN.md)。
 
 ## 仓库与界面预览
 

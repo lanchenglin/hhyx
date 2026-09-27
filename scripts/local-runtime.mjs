@@ -11,7 +11,7 @@ class Statement {
  bind(...args){return new Statement(this.db,this.sql,args);}
  async first(column){const v=this.db.prepare(this.sql).get(...this.args)||null;return column?v?.[column]??null:v;}
  async all(){return {success:true,results:this.db.prepare(this.sql).all(...this.args),meta:{}};}
- runSync(){const v=this.db.prepare(this.sql).run(...this.args);return {success:true,results:[],meta:{changes:Number(v.changes),last_row_id:Number(v.lastInsertRowid)}};}
+ runSync(){const q=this.db.prepare(this.sql);if(q.columns().length)return {success:true,results:q.all(...this.args),meta:{changes:0}};const v=q.run(...this.args);return {success:true,results:[],meta:{changes:Number(v.changes),last_row_id:Number(v.lastInsertRowid)}};}
  async run(){return this.runSync();}
 }
 export class LocalD1 {
@@ -30,7 +30,11 @@ export async function runtime({memory=false,dir=path.join(ROOT,'.local'),vars={}
  const files=new Map();const fileRoot=path.join(dir,'files');
  const env={DB:new LocalD1(db),APP_NAME:'合伙有序',APP_URL:'http://localhost:8787',TZ:'Asia/Shanghai',...vars,
  FILES:{async put(key,value){const bytes=Buffer.from(value);if(memory)files.set(key,bytes);else{const f=path.join(fileRoot,key);await mkdir(path.dirname(f),{recursive:true});await writeFile(f,bytes);}return {key};},async get(key){try{const data=memory?files.get(key):await readFile(path.join(fileRoot,key));return data?{body:new Uint8Array(data)}:null;}catch{return null;}},async delete(key){if(memory)files.delete(key);else await rm(path.join(fileRoot,key),{force:true});}},
- ASSETS:{async fetch(req){const name=new URL(req.url).pathname;const safe=['/index.html','/app.js','/ai-ui.js','/admin-ui.js','/admin.css','/styles.css','/mobile.css','/favicon.svg'].includes(name)?name:'/index.html';const data=await readFile(path.join(ROOT,'public',safe));const ext=path.extname(safe);return new Response(data,{headers:{'Content-Type':({'.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.html':'text/html; charset=utf-8'})[ext]}});}}
+ ASSETS:{async fetch(req){const name=new URL(req.url).pathname;const safe=['/index.html','/app.js','/ai-ui.js','/admin-ui.js','/ops-ui.js','/security-ui.js','/continuity-ui.js','/admin.css','/styles.css','/mobile.css','/favicon.svg'].includes(name)?name:'/index.html';const data=await readFile(path.join(ROOT,'public',safe));const ext=path.extname(safe);return new Response(data,{headers:{'Content-Type':({'.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.html':'text/html; charset=utf-8'})[ext]}});}}
  };
  const pending=[];return {env,db,ctx:{waitUntil(p){pending.push(Promise.resolve(p).catch(()=>{}));}},async settle(){await Promise.all(pending.splice(0));},close(){db.close();}};
 }
+
+// Explicit isolated stores for tests; not automatic production backup bindings.
+export function memoryBucket(){const objects=new Map();return {objects,async put(key,value){const b=typeof value==='string'?Buffer.from(value):value instanceof ReadableStream?Buffer.from(await new Response(value).arrayBuffer()):Buffer.from(value);objects.set(key,b);return {key,size:b.length};},async get(key){const b=objects.get(key);return b?{body:new Uint8Array(b),size:b.length,async arrayBuffer(){return b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength);}}:null;},async delete(key){objects.delete(key);}};}
+export function isolatedD1(){const raw=new DatabaseSync(':memory:');raw.exec('PRAGMA foreign_keys=ON');return new LocalD1(raw);}

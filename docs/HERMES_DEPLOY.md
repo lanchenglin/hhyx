@@ -1,6 +1,6 @@
 # 给 Hermes：将合伙有序部署到 Cloudflare
 
-版本：1.2.0。首次部署目标是**新建一个独立应用**，只用 Workers + D1 + 私有 R2。不要修改 `sx_web`、`memos-cloudflare` 或其他现有项目。用户指定的源码仓库是 `https://github.com/lanchenglin/hhyx`，默认分支为 `main`。不要新建其他仓库，也不要上传真实业务数据或密钥。
+版本：1.3.0。首次部署目标是**新建一个独立应用**，只用 Workers + D1 + 私有 R2。不要修改 `sx_web`、`memos-cloudflare` 或其他现有项目。用户指定的源码仓库是 `https://github.com/lanchenglin/hhyx`，默认分支为 `main`。不要新建其他仓库，也不要上传真实业务数据或密钥。
 
 ## 0. 执行权限与停止条件
 
@@ -10,7 +10,85 @@
 
 必须停止并报告的情形：账号归属不明；真实域名/预算范围未确认；需要覆盖现有库；测试不通过；生产密钥缺失；来源校验/私有附件隔离失效。不要宣称“已部署”来代替这些步骤。
 
-## 现有站点升级到 v1.2.0：保留账号与数据
+## 现有站点升级到 v1.3.0：先迁移，再验证四项功能
+
+本节优先于下方保留的v1.2升级说明。只修改已核实属于本仓库的应用；保留真实APP_URL、路由、绑定、Secrets、原配置根密钥和未提交修改。不得重建/清空原库、重置原admin密码，也不替真实合伙人批准任何业务。
+
+### A. 代码与数据库
+
+1. 在源码目录之外备份现有D1、私有R2、部署配置及原CONFIG_ENCRYPTION_KEY，确认可恢复。新备份功能还没部署，不能拿“准备启用新备份”代替升级前备份。
+2. 获取本仓库main的v1.3.0，先检查工作目录未提交改动，普通合并更新，不强制重置。运行 `npm run check`、`npm test`。已经存在lockfile则用 `npm ci`，本仓库没有编造无法联网生成的lockfile。
+3. 对正确的生产DB执行 `npm run db:remote`：Wrangler只应用尚未执行的迁移，本版新增 `0004_operations_security.sql`。更早版本还需未执行的0002/0003。不要手工重跑ALTER，也不要在演练库上应用生产迁移。
+4. 先迁移后部署。0004不改原密码/用户名，MFA全站强制与自动备份默认关闭。上线期间按环境安排维护，不能回退到忽略MFA/退出清算的旧代码继续处理业务。
+
+### B. 可选备份资源必须真实隔离
+
+未授权新资源/费用时，保留备份未配置状态，仍可更新原业务、MFA、通知配置与合作交接；不要擅自开通付费服务。获得授权并核对归属后，以下仅为专属新资源示例，遇到同名先核实，不能删除旧资源：
+
+```bash
+npx wrangler r2 bucket create coop-plan-backups-private
+npx wrangler d1 create coop-plan-restore-drill
+npx wrangler r2 bucket create coop-plan-drill-private
+```
+
+三个R2桶必须私有，不开启r2.dev或公开域名。记录真实D1 UUID。向**现有配置**合并以下新绑定，保留原DB、FILES和其余绑定；下面片段不是完整可替换配置：
+
+```json
+{
+  "d1_databases": [
+    {"binding":"DB","database_name":"保留原库名","database_id":"保留原真实UUID","migrations_dir":"migrations"},
+    {"binding":"RESTORE_DB","database_name":"coop-plan-restore-drill","database_id":"填写新演练库真实UUID"}
+  ],
+  "r2_buckets": [
+    {"binding":"FILES","bucket_name":"保留原业务私有桶"},
+    {"binding":"BACKUPS","bucket_name":"coop-plan-backups-private"},
+    {"binding":"RESTORE_FILES","bucket_name":"coop-plan-drill-private"}
+  ],
+  "vars": {
+    "FILES_BUCKET_NAME":"保留原业务私有桶",
+    "BACKUP_BUCKET_NAME":"coop-plan-backups-private",
+    "RESTORE_BUCKET_NAME":"coop-plan-drill-private"
+  }
+}
+```
+
+占位内容必须换成真实值；vars要合并而非覆盖APP_URL等。三个bucket_name不同、两个database_id不同，不能只换binding名称而复用资源。RESTORE_DB无需运行应用迁移，由演练器建立有命名空间的表；目标已有其他业务表时立即停止，不清库。
+
+用可信随机生成器或密码管理器生成**独立于CONFIG_ENCRYPTION_KEY**的32字节随机值base64，以交互方式保存：
+
+```bash
+npx wrangler secret put BACKUP_ENCRYPTION_KEY
+# 已有旧备份且确需轮换时，另外安全保存旧指纹到旧密钥的JSON映射：
+# npx wrangler secret put BACKUP_OLD_KEYS_JSON
+```
+
+不要输出、截图或提交密钥；原CONFIG_ENCRYPTION_KEY必须保留，不能重生成。密钥不放普通vars。将密钥与密文异地/离线分开保管，具体验证与费用由用户授权。没有备份Secret或独立绑定，系统会显示未配置，不自动复用业务桶。
+
+保留已有每10分钟Cron。自动备份UTC时刻是“该小时之后调度”，不保证整点完成；多附件恢复可能要多个Cron周期。历史备份和演练文件不自动删除，须明确留存和存储费用。单次数据库16MiB、每表10000行、1000附件/每份10MiB上限不代表目标Workers计划已满足CPU/内存/查询配额。
+
+### C. 构建与首次功能验收
+
+```bash
+npm run check
+npm run check:bindings
+npm run deploy:check
+npm run deploy
+```
+
+这些命令需要已经安装Wrangler并获得对应账号权限。本次交付环境未运行真实Wrangler/Cloudflare验收，必须在部署环境执行并记录真实结果。使用自定义 `--env` 时，另外核对该环境实际生效的DB/R2和vars；默认文件校验不能代替云端资源核对。
+
+先通过真实URL检查health/auth/status及旧项目完整性，再用明确标注的隔离测试项目：
+
+- 管理员“账号安全”手动绑定认证器，保存一次性恢复码；退出再登录应先验证第二因素，未验证不得读业务。确认恢复方式后再逐个让现有管理员绑定，最后可开启强制策略。不得替用户保存长期明文种子到公共文件。
+- “备份与恢复”手动创建一次成功备份，执行隔离恢复演练，核对报告和生产数据没有变化；下载密文在源码目录外的新目录跑离线工具。真实D1、R2权限、Cron及错误告警均通过后，才由管理员开启每日计划/自动演练。
+- “通知服务商”填写已授权密钥、审核通过的签名模板及全站接收范围。保存不发送；获得接收群/本人短信费用授权才测试。项目自有群继续可用，继承全站群需项目负责人另行确认。不得拿真实业务群当默认测试群。
+- 三个由测试者控制的独立虚构账号完成负责人移交、退出方案、实际模拟收付登记、不同人员复核、最终全员确认；禁止冒充真实合伙人投票。核对旧采购与AI全员授权不被绕过。
+- 手机Safari/Chrome/常用微信内置浏览器检查菜单、密码与验证码输入、恢复码显示/关闭清理、备份下载、清算长表单和全员确认；离线Chromium布局不等于这些真机流程已通过。
+
+离线恢复命令与容量见 `OPERATIONS_V1_3.md`；实际本地测试证据与云端待验收见 `ACCEPTANCE_V1_3.md`。交付报告应逐项写成功/失败/未测，明确真实URL、版本、资源ID（不含密钥）、是否产生费用和谁保管恢复材料。缺授权或校验失败就停止对应外部操作，不降低验证和隔离要求。
+
+
+## 历史补充：v1.2管理员升级行为（当前以v1.3步骤为准）
 
 仅更新已核实属于本仓库的站点。先记录部署版本、检查 `git status`，保留域名、D1/R2绑定、路由和未提交改动，不强制重置。
 
@@ -28,7 +106,7 @@
 
 只用于用户明确授权的新站点，不能用于覆盖已有账号。公开源码没有共享固定密码。
 
-先完成0001–0003迁移，按下文生成专属CONFIG_ENCRYPTION_KEY（旧站点不得重生成）。使用交互式Secret设置用户私下指定的临时密码：
+先完成0001–0004迁移，按下文生成专属CONFIG_ENCRYPTION_KEY（旧站点不得重生成）。使用交互式Secret设置用户私下指定的临时密码：
 
 ```bash
 npx wrangler secret put INITIAL_ADMIN_PASSWORD
@@ -145,7 +223,7 @@ curl --fail http://localhost:8787/api/auth/status
 npm run db:remote
 ```
 
-看到现有表或业务数据时，不得执行清库、重置或删除；先核实是否是专属新库。当前包含0001初始、0002新增AI和0003管理员迁移，后续仍须使用新的增量迁移，不能改写历史迁移模拟升级。
+看到现有表或业务数据时，不得执行清库、重置或删除；先核实是否是专属新库。当前包含0001初始、0002新增AI、0003管理员与0004运维安全迁移，后续仍须使用新的增量迁移，不能改写历史迁移模拟升级。
 
 ## 5. 构建与部署
 
@@ -229,6 +307,6 @@ npx wrangler d1 export coop-plan-db --remote --output ./backup-coop-plan.sql
 
 运行`npm run check`及`npm test`，有浏览器测试依赖时再运行`node tests/mobile-fixture.mjs`与`npm run test:mobile`。上线后检查`/mobile.css`返回CSS而不是HTML，并按`MOBILE_WEB.md`完成iPhone/安卓及常用微信浏览器的真机验收。不能把离线截图当成云端或软键盘测试通过。
 
-## v1.2交付必须逐项说明
+## 原有业务交付仍须逐项说明
 
 实际部署URL/版本、0003迁移是否完成、旧密码和项目是否保留、管理员入口与普通用户API隔离、归档恢复与私有附件、账号变更提醒和会话失效、AI配置及真实测试发送情况。未进行的真机、云端、模型、消息和恢复演练写明未验证，不能将绑定存在或离线截图写为线上成功。

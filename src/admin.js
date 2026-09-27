@@ -1,3 +1,5 @@
+import {operationsAdminRoute} from './ops-admin.js';
+import {requireAdminFactor,requireFreshFactor,mfaPolicy} from './mfa.js';
 import {getReport} from './ai.js';
 import {createHmac} from 'node:crypto';
 import {assert,AppError,body,json,uid,now,sha,text,email,hashPassword} from './util.js';
@@ -22,7 +24,7 @@ const userView=u=>({...publicUser(u),authVersion:u.auth_version,createdAt:u.crea
 
 // Site-level updates serialize on a CAS revision. Every side effect, revocation,
 // result and audit row is guarded by the successful revision claim.
-async function siteChange(env,user,key,payload,build){
+export async function siteChange(env,user,key,payload,build){
  requireAdmin(user);assert(typeof key==='string'&&/^[a-zA-Z0-9_-]{12,100}$/.test(key),'缺少有效的请求幂等键');
  const op=sha(user.id+':admin:'+key),requestHash=createHmac('sha256',user.password_hash).update(JSON.stringify(payload)).digest('hex');
  for(let attempt=0;attempt<5;attempt++){
@@ -46,7 +48,7 @@ async function siteChange(env,user,key,payload,build){
  throw new AppError('管理设置同时发生变化，请刷新后重试',409,'CONFLICT');
 }
 function obligations(state){
- return {pendingApprovals:state.purchases.filter(q=>q.status==='pending').length+state.proposals.filter(g=>g.status==='pending').length,
+ return {exitSettlements:(state.exits||[]).filter(x=>x.status==='settling').length,exitHoldCents:finance(state).exitHoldCents,pendingApprovals:state.purchases.filter(q=>q.status==='pending').length+state.proposals.filter(g=>g.status==='pending').length,
   unfinishedPurchases:state.purchases.filter(q=>q.order&&q.status!=='received').length,
   unfinishedTasks:state.tasks.filter(t=>t.status!=='done').length,unverifiedEntries:state.ledger.filter(l=>!l.verifiedBy).length,
   payableCents:finance(state).payableCents,receivableCents:finance(state).receivableCents,
@@ -59,14 +61,16 @@ async function userMemberships(env,userId){const list=await rows(env,'SELECT p.i
 
 export async function adminRoute(req,env,ctx,{user,session,url}){
  requireAdmin(user);const method=req.method,path=url.pathname.slice('/api/admin'.length)||'/';
- if(method==='POST')requireReauth(session);
+ await requireAdminFactor(env,user,session);
+ if(method==='POST'){requireReauth(session);requireFreshFactor(user,session);}
+ const ops=await operationsAdminRoute(req,env,ctx,{user,session,url});if(ops)return ops;
  if(path==='/overview'&&method==='GET'){
   const userCounts=await one(env,"SELECT COUNT(*) AS total,SUM(disabled=1) AS disabled,SUM(system_role='admin' AND disabled=0) AS admins,SUM(must_change_password=1) AS passwordChangesRequired FROM users");
   const projectCounts=await rows(env,'SELECT lifecycle,COUNT(*) AS count FROM projects GROUP BY lifecycle');
   const jobs=await rows(env,'SELECT status,COUNT(*) AS count FROM ai_jobs GROUP BY status');
   const notifications=await rows(env,'SELECT status,COUNT(*) AS count FROM outbox GROUP BY status');
   let ai;try{ai=await aiSettingsView(env);}catch(e){ai={engine:{configured:false,error:e.message}};}
-  return json({version:'1.2.0',userCounts,projectCounts,jobs,notifications,aiConfigured:ai.enabled&&ai.keyConfigured,
+  return json({version:'1.3.0',userCounts,projectCounts,jobs,notifications,aiConfigured:ai.enabled&&ai.keyConfigured,
    diagnostics:{database:'reachable',filesBinding:!!env.FILES,configurationEncryption:!!env.CONFIG_ENCRYPTION_KEY,notifyQueue:!!env.NOTIFY_QUEUE,
     aiConfiguration:ai.engine?.error||'',note:'绑定存在不等于云端服务已验收；备份需同时包含D1及私有R2。'}});
  }

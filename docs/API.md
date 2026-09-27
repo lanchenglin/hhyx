@@ -148,3 +148,39 @@ AI任务状态：queued → running → completed/failed/uncertain；发送前�
 | GET /api/admin/audit?before=&action= | 管理日志分页、按动作筛选 |
 
 普通登录支持原email字段中填写邮箱或用户名，也支持login字段。`/api/auth/me`增加username/systemRole/disabled/canCreateProjects/mustChangePassword。密码接口保留，修改后撤销其他会话并轮换权限版本。归档写请求409、回收站普通项目访问410、普通账号后台访问403。
+
+## v1.3 第二因素、运维与交接
+
+所有写操作继续要求当前有效会话、Origin/CSRF、幂等键和相应权限。第二因素待验证会话不能调用业务接口。管理员写操作仍验证密码，已绑定MFA的高风险操作还须近期第二因素。新增数据库迁移0004。
+
+| 路径 | 方法 | 作用 |
+|---|---|---|
+| `/api/auth/mfa/status` | GET | 本人绑定、验证、近期验证、恢复码剩余状态 |
+| `/api/auth/mfa/enroll` | POST | 当前会话创建10分钟待绑定密钥，需验证密码 |
+| `/api/auth/mfa/confirm` | POST | `{code}`；验证绑定，返回一次性恢复码 |
+| `/api/auth/mfa/verify` | POST | `{code}`；TOTP或恢复码，轮换会话与CSRF |
+| `/api/auth/mfa/recovery-codes` | POST | 验证后重新生成，旧码作废 |
+| `/api/auth/mfa/disable` | POST | 本人关闭，受管理员强制策略限制 |
+| `/api/admin/security` | GET | 管理员策略与绑定列表 |
+| `/api/admin/security/policy` | POST | `{requireAdmins,reason}`，本人先绑定 |
+| `/api/admin/notification-settings` | GET / POST | 脱敏读取/版本校验更新加密配置；不发送 |
+| `/api/admin/notification-settings/test` | POST | `{channel,expectedRevision,confirmSend,confirmAudience?}`，单独授权测试 |
+| `/api/admin/delivery` | GET | 最近100投递及告警 |
+| `/api/admin/delivery/retry` | POST | `{id,reason,confirmDuplicate:true}`，保留原记录、新建重发 |
+| `/api/admin/alerts/acknowledge` | POST | `{id,reason}`，确认处理告警 |
+| `/api/admin/backups` | GET | 设置、实际绑定状态、最近成功、过期提示、任务报告 |
+| `/api/admin/backups/settings` | POST | `{enabled,utcHour,autoDrill,expectedRevision,reason}` |
+| `/api/admin/backups/run` | POST | `{kind:'backup'|'drill',sourceId?,confirmStorage:true,confirmIsolation?,reason}`，返回202仅表示排队 |
+| `/api/admin/backups/:id/download` | GET | 已完成的密文TAR，需近期密码/MFA验证 |
+
+项目渠道POST增加 `mode: 'off'|'own'|'global'`。global必须有 `confirmAudience:true` 和当前 `expectedGlobalRevision`。普通成员只能看到是否配置与公开的接收范围，不能读密钥。
+
+项目 `/actions` 的 `proposal.submit` 新增：
+
+- `ownership_transfer`：payload `{newOwnerMemberId,handover}`。接收者 `proposal.vote` 同意还需 `acceptOwnership:true`。
+- `exit_plan`：payload `{memberId,capitalCents,profitCents,reimburseCents,owedCents,shares:{memberId:basisPoints},handover:{tasks:[{id,assigneeId,reviewerId}],purchases:[{id,executorId,receiverId}]},basis,responsibilities,dueDate}`。金额均整数分，剩余比例合计10000；退出者同意还需 `acceptExit:true`。
+- `exit_finalize`：payload `{exitId,confirmation}`，实际净额足额独立复核后再次原全员确认。
+- `exit_cancel`：payload `{exitId}`，无已发生退出收付时才可共同取消。
+- `exit.payment` 是动作type而不是proposal：data `{id:exitPlanId,amountCents,evidence,attachments?}`，按批准净额方向登记，不转账，仍走 `ledger.verify` 不同成员复核。
+
+MFA常见错误码：`MFA_REQUIRED`、`MFA_STEPUP_REQUIRED`、`MFA_SETUP_REQUIRED`、`MFA_INVALID`。接口被拒绝不代表验证码通过；报告过期或资料冲突为409，不得自动重试投票忽略新内容。

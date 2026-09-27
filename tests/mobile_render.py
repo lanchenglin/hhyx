@@ -20,7 +20,8 @@ fixture = json.loads((OUT / 'mobile-fixture.json').read_text())
 css = '\n'.join((ROOT / f'public/{name}.css').read_text() for name in ['styles', 'mobile', 'admin'])
 svg = 'data:image/svg+xml,' + urllib.parse.quote((ROOT / 'public/favicon.svg').read_text())
 html = (ROOT / 'public/index.html').read_text().replace('<link rel="stylesheet" href="/styles.css">', '<style>' + css + '</style>').replace('<link rel="stylesheet" href="/mobile.css">', '').replace('<link rel="stylesheet" href="/admin.css">', '').replace('<script type="module" src="/app.js"></script>', '').replace('/favicon.svg', svg)
-code = (ROOT/'public/admin-ui.js').read_text().replace('export function', 'function') + '\n' + (ROOT/'public/ai-ui.js').read_text().replace('export function', 'function') + '\n' + (ROOT/'public/app.js').read_text().replace("import { createAdminUI } from './admin-ui.js';",'').replace("import { createAiUI } from './ai-ui.js';", '').replace('/favicon.svg', svg)
+from frontend_bundle import frontend_bundle
+code = frontend_bundle(ROOT, svg)
 checks, errors = [], []
 MOCK = r'''f=>{
  window.fixture=f;window.mobileWrites=[];let counter=0;

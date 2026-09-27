@@ -153,7 +153,9 @@ test('AI纯函数防护及确定性测算',async t=>{
 test('AI调度恢复与授权变动回归',async t=>{
  await t.test('移除合伙人后原外发授权失效，不沿用减少人数的旧许可',()=>use(async f=>{
   await f.approvePolicy();let p=(await load(f.rt.env,f.pid)).state;
-  p=await f.action(f.owner,'proposal.submit',{kind:'member_remove',payload:{memberId:p.members[2].id},reason:'全员确认成员退出'});
+  p=await f.action(f.owner,'proposal.submit',{kind:'exit_plan',payload:{memberId:p.members[2].id,capitalCents:0,profitCents:0,reimburseCents:0,owedCents:0,shares:{[p.members[0].id]:5000,[p.members[1].id]:5000},handover:{tasks:[],purchases:[]},basis:'测试零净额退出，相关责任另列',responsibilities:'测试成员共同核对已有责任',dueDate:'2027-01-01'},reason:'全员确认成员退出清算'});
+  const planId=p.proposals.at(-1).id;for(const c of f.all)await f.action(c,'proposal.vote',{id:planId,decision:'approve',acceptExit:true});
+  p=await f.action(f.owner,'proposal.submit',{kind:'exit_finalize',payload:{exitId:planId,confirmation:'零净额与交接共同确认'},reason:'全体最后确认退出'});
   const id=p.proposals.at(-1).id;for(const c of f.all)await f.action(c,'proposal.vote',{id,decision:'approve'});
   assert.equal((await f.owner.ok(f.base+'/ai',undefined,'GET')).consented,false);assert.equal(f.calls,0);
  }));

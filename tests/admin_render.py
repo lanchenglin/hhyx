@@ -10,7 +10,8 @@ fixture=json.loads((OUT/'admin-fixture.json').read_text())
 css='\n'.join((ROOT/'public'/n).read_text() for n in ['styles.css','mobile.css','admin.css'])
 svg='data:image/svg+xml,'+urllib.parse.quote((ROOT/'public/favicon.svg').read_text())
 html=(ROOT/'public/index.html').read_text().replace('<link rel="stylesheet" href="/styles.css">','<style>'+css+'</style>').replace('<link rel="stylesheet" href="/mobile.css">','').replace('<link rel="stylesheet" href="/admin.css">','').replace('<script type="module" src="/app.js"></script>','').replace('/favicon.svg',svg)
-code='\n'.join((ROOT/'public'/n).read_text().replace('export function','function') for n in ['admin-ui.js','ai-ui.js'])+'\n'+(ROOT/'public/app.js').read_text().replace("import { createAdminUI } from './admin-ui.js';",'').replace("import { createAiUI } from './ai-ui.js';",'').replace('/favicon.svg',svg)
+from frontend_bundle import frontend_bundle
+code = frontend_bundle(ROOT, svg)
 MOCK=r'''({fixture,kind})=>{
  window.writes=[];window.saved={};window.f=structuredClone(fixture);window.mockFailure=false;
  if(!crypto.randomUUID)Object.defineProperty(crypto,'randomUUID',{value:()=>String(Math.random())});

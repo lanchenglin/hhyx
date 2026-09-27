@@ -55,7 +55,7 @@ test('管理员初始化、旧库升级和本地重启',async t=>{
  await t.test('本地迁移只执行一次，重启不重置数据',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'hhyx-admin-test-'));try{
    let rt=await runtime({dir});await rt.env.DB.prepare("INSERT INTO settings(key,value) VALUES('test-persist','kept')").run();rt.close();
-   rt=await runtime({dir});assert.equal((await one(rt.env,"SELECT value FROM settings WHERE key='test-persist'")).value,'kept');assert.equal((await one(rt.env,'SELECT COUNT(*) AS n FROM local_migrations')).n,3);rt.close();
+   rt=await runtime({dir});assert.equal((await one(rt.env,"SELECT value FROM settings WHERE key='test-persist'")).value,'kept');assert.equal((await one(rt.env,'SELECT COUNT(*) AS n FROM local_migrations')).n,4);rt.close();
   }finally{await rm(dir,{recursive:true,force:true});}
  });
 });

@@ -1,3 +1,6 @@
+import {scheduledBackups} from './backups.js';
+import {readNotifyConfig,resolveNotifyEnv,adminAlert} from './notification-config.js';
+import {mfaRoute,requireFactor,consumeFactor,mfaEnabled,requireFreshFactor} from './mfa.js';
 import {adminRoute} from './admin.js';
 import { Buffer } from 'node:buffer';
 import { assert, AppError, body, json, now, uid, sha, token, email, text, hashPassword, verifyPassword, encrypt, csv } from './util.js';
@@ -7,7 +10,7 @@ import { getMember, partner, projectView } from './domain.js';
 import { aiRoute, autoAnalysis, processAiJobs } from './ai.js';
 import { validateWecom, kick, scheduled, deliverOne } from './notifications.js';
 
-const SENSITIVE = new Set(['proposal.vote','purchase.vote','purchase.order','purchase.pay','ledger.verify','ledger.reverse','project.pause','settlement.pay','ai.suspend']);
+const SENSITIVE = new Set(['exit.payment','proposal.vote','purchase.vote','purchase.order','purchase.pay','ledger.verify','ledger.reverse','project.pause','settlement.pay','ai.suspend']);
 const INTERNAL = new Set(['admin.lifecycle','admin.member.role','member.join','attachment.add','channel.update','invite.create','ai.run.request','ai.run.finish','ai.review']);
 const MIME = new Set(['application/pdf','image/png','image/jpeg','image/webp','text/plain','text/csv','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
 const MAX_FILE=10*1024*1024;
@@ -21,7 +24,7 @@ async function handle(req,env,ctx){
  if(!path.startsWith('/api/'))return env.ASSETS.fetch(req);
  if(method==='OPTIONS')return new Response(null,{status:405});
  if(!['GET','HEAD'].includes(method))originCheck(req,env);
- if(path==='/api/health'&&method==='GET')return json({ok:true,service:'coop-plan',version:'1.2.0'});
+ if(path==='/api/health'&&method==='GET')return json({ok:true,service:'coop-plan',version:'1.3.0'});
  if((path==='/api/auth/status'&&method==='GET')||(path==='/api/auth/login'&&method==='POST'))await ensureInitialAdmin(env);
  if(path==='/api/auth/status'&&method==='GET')return json({initialized:!!await one(env,"SELECT value FROM settings WHERE key='bootstrapped'")});
  if(['/api/auth/bootstrap','/api/auth/login','/api/auth/accept'].includes(path)&&method==='POST') {
@@ -33,13 +36,14 @@ async function handle(req,env,ctx){
   const invitation=await one(env,'SELECT * FROM invites WHERE token_hash=? AND expires_at>?',sha(a.token),Math.floor(Date.now()/1000));
   assert(invitation,'邀请已过期或无效',400);const {state,row:inviteProject}=await load(env,invitation.project_id);assert(inviteProject.lifecycle==='active','项目已归档或进入回收站，不能接受邀请',409);const m=state.members.find(m=>m.id===invitation.member_id&&m.active);
   assert(m&&m.email===invitation.email,'邀请对应的成员已变更或退出',403);
-  let user=await one(env,'SELECT * FROM users WHERE email=?',invitation.email);
+  let user=await one(env,'SELECT * FROM users WHERE email=?',invitation.email),inviteFactorVersion=0;
   if(user){assert(!user.disabled&&!user.must_change_password,'该账号已停用或需要先登录修改临时密码',403);assert(verifyPassword(a.password,user.password_hash),'已存在账号，请输入该账号密码',401);}
-  else {assert(!invitation.used_by,'邀请已使用',409);user={id:uid(),email:invitation.email,name:text(a.name,'姓名',60),password_hash:hashPassword(a.password)};await env.DB.prepare('INSERT INTO users(id,email,name,password_hash,created_at) VALUES(?,?,?,?,?)').bind(user.id,user.email,user.name,user.password_hash,now()).run();}
+  if(user&&await mfaEnabled(env,user.id)){assert(a.mfaCode,'此账号启用了二次验证，请同时填写动态验证码或恢复码',403,'MFA_INVITE_REQUIRED');inviteFactorVersion=(await consumeFactor(env,user,a.mfaCode)).version;}
+  if(!user) {assert(!invitation.used_by,'邀请已使用',409);user={id:uid(),email:invitation.email,name:text(a.name,'姓名',60),password_hash:hashPassword(a.password)};await env.DB.prepare('INSERT INTO users(id,email,name,password_hash,created_at) VALUES(?,?,?,?,?)').bind(user.id,user.email,user.name,user.password_hash,now()).run();}
   assert(!invitation.used_by||invitation.used_by===user.id,'邀请已由其他账号使用',409);
   if(!m.userId)await mutate(env,invitation.project_id,user,{type:'member.join',data:{memberId:m.id}},`accept_${sha(a.token).slice(0,40)}`,{inviteVerified:true,extraStatements:(e,pid,op)=>[e.DB.prepare('UPDATE invites SET used_by=? WHERE token_hash=? AND EXISTS(SELECT 1 FROM projects WHERE id=? AND last_operation=?)').bind(user.id,sha(a.token),pid,op)]});
   else assert(m.userId===user.id,'邀请已绑定其他成员',409);
-  return sessionResponse({...await startSession(env,req,user),projectId:invitation.project_id},req);
+  return sessionResponse({...await startSession(env,req,user,{factorVersion:inviteFactorVersion}),projectId:invitation.project_id},req);
  }
  if(path==='/api/invite'&&method==='GET') {
   const t=url.searchParams.get('token')||'';assert(t.length<200,'邀请无效');
@@ -48,9 +52,11 @@ async function handle(req,env,ctx){
  const auth=await authenticate(env,req,!['GET','HEAD'].includes(method)),{user,session}=auth;
  if(path==='/api/auth/me'&&method==='GET')return json({user:publicUser(user),csrf:session.csrf});
  if(path==='/api/auth/logout'&&method==='POST'){await env.DB.prepare('DELETE FROM sessions WHERE token_hash=?').bind(session.hash).run();return json({ok:true},200,{'Set-Cookie':sessionCookie(req,'',0)});}
+ if(path.startsWith('/api/auth/mfa/'))return mfaRoute(req,env,{user,session,url});
+ requireFactor(session);
  if(path==='/api/auth/reauth'&&method==='POST'){await rateLimit(env,`reauth:${user.id}`,10);const a=await body(req);assert(verifyPassword(a.password,user.password_hash),'密码不正确',403);await env.DB.prepare('UPDATE sessions SET reauth_at=? WHERE token_hash=?').bind(Math.floor(Date.now()/1000),session.hash).run();return json({ok:true,validForSeconds:300});}
  if(path==='/api/auth/password'&&method==='POST'){
-  requireReauth(session);const a=await body(req);const hash=hashPassword(a.password);
+  requireReauth(session);requireFreshFactor(user,session);const a=await body(req);const hash=hashPassword(a.password);
   assert(!verifyPassword(a.password,user.password_hash),'新密码不能与当前密码相同');
   const nextVersion=user.auth_version+1;
   const changed=await env.DB.batch([
@@ -114,11 +120,24 @@ async function handle(req,env,ctx){
  }
  const fm=sub.match(/^files\/([^/]+)$/);
  if(fm&&method==='GET'){const f=await one(env,'SELECT * FROM attachments WHERE id=? AND project_id=?',fm[1],pid);assert(f,'文件不存在',404);const object=await env.FILES.get(f.object_key);assert(object,'文件对象缺失，请检查备份',404);return new Response(object.body,{headers:{'Content-Type':f.mime,'Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(f.name)}`,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"sandbox; default-src 'none'"}});}
- if(sub==='channels'&&method==='GET'){const c=await one(env,'SELECT enabled,updated_at FROM channel_settings WHERE project_id=?',pid);return json({wecomConfigured:!!c?.enabled,smsProviderConfigured:!!(env.ALIYUN_ACCESS_KEY_ID&&env.ALIYUN_ACCESS_KEY_SECRET&&env.ALIYUN_SMS_SIGN_NAME&&env.ALIYUN_SMS_TEMPLATE_CODE),updatedAt:c?.updated_at||null,outbox:await rows(env,'SELECT id,channel,title,status,attempts,error,provider_receipt,created_at,sent_at FROM outbox WHERE project_id=? ORDER BY created_at DESC LIMIT 100',pid)});}
- if(sub==='channels'&&method==='POST'){requireReauth(session);partner(state,user);assert(user.id===state.ownerId,'第一版仅创建人可配置外部渠道，其他成员可查看配置状态与记录',403);const a=await body(req);assert(typeof a.enabled==='boolean','启用参数不正确');const endpoint=a.enabled?validateWecom(a.webhook):'',encrypted=endpoint?encrypt(endpoint,env.CONFIG_ENCRYPTION_KEY):null;
-  await mutate(env,pid,user,{type:'channel.update',data:{enabled:a.enabled}},keyOf(req),{channelVerified:true,extraHash:sha(endpoint),extraStatements:(e,pid,op)=>[e.DB.prepare('INSERT INTO channel_settings(project_id,wecom_encrypted,enabled,updated_by,updated_at) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM projects WHERE id=? AND last_operation=?) ON CONFLICT(project_id) DO UPDATE SET wecom_encrypted=excluded.wecom_encrypted,enabled=excluded.enabled,updated_by=excluded.updated_by,updated_at=excluded.updated_at').bind(pid,encrypted,a.enabled?1:0,user.id,now(),pid,op)]});return json({ok:true});}
+ if(sub==='channels'&&method==='GET'){
+  const c=await one(env,'SELECT enabled,inherit_global,global_revision,updated_at FROM channel_settings WHERE project_id=?',pid),global=await readNotifyConfig(env),resolved=await resolveNotifyEnv(env);
+  return json({wecomConfigured:!!c?.enabled&&(c.inherit_global?!!(global?.deliveryEnabled&&global.wecomEnabled&&global.wecomEncrypted&&c.global_revision===global.revision):!!c.wecom_encrypted),mode:c?.enabled?(c.inherit_global?'global':'project'):'off',globalAvailable:!!(global?.deliveryEnabled&&global.wecomEnabled&&global.wecomEncrypted),globalRevision:global?.revision||0,globalAudience:global?.wecomAudience||'',globalReconfirmationRequired:!!c?.inherit_global&&c.global_revision!==global?.revision,smsProviderConfigured:!!(resolved.ALIYUN_ACCESS_KEY_ID&&resolved.ALIYUN_ACCESS_KEY_SECRET&&resolved.ALIYUN_SMS_SIGN_NAME&&resolved.ALIYUN_SMS_TEMPLATE_CODE),updatedAt:c?.updated_at||null,outbox:await rows(env,'SELECT id,channel,title,status,attempts,error,provider_receipt,created_at,sent_at FROM outbox WHERE project_id=? ORDER BY created_at DESC LIMIT 100',pid)});
+ }
+ if(sub==='channels'&&method==='POST'){
+  requireReauth(session);partner(state,user);assert(user.id===state.ownerId,'仅项目负责人可配置项目接收范围',403);const a=await body(req),mode=a.mode||(a.enabled?'project':'off');assert(['off','project','global'].includes(mode),'通知模式无效');
+  let endpoint='',encrypted=null,revision=0;
+  if(mode==='global'){const c=await readNotifyConfig(env);assert(c?.deliveryEnabled&&c.wecomEnabled&&c.wecomEncrypted,'管理员尚未配置全站企业微信');assert(a.confirmAudience===true&&a.expectedGlobalRevision===c.revision,'请核对全站接收群人员范围并明确确认；配置变化后需重新确认');revision=c.revision;}
+  if(mode==='project'){if(a.webhook){endpoint=validateWecom(a.webhook);encrypted=encrypt(endpoint,env.CONFIG_ENCRYPTION_KEY);}else{const old=await one(env,'SELECT wecom_encrypted,inherit_global FROM channel_settings WHERE project_id=?',pid);assert(old?.wecom_encrypted&&!old.inherit_global,'请填写本项目独立机器人地址');encrypted=old.wecom_encrypted;}}
+  await mutate(env,pid,user,{type:'channel.update',data:{enabled:mode!=='off',mode,globalRevision:revision}},keyOf(req),{channelVerified:true,extraHash:sha(endpoint||encrypted||''),extraStatements:(e,pid,op)=>[e.DB.prepare('INSERT INTO channel_settings(project_id,wecom_encrypted,enabled,updated_by,updated_at,inherit_global,global_revision) SELECT ?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM projects WHERE id=? AND last_operation=?) ON CONFLICT(project_id) DO UPDATE SET wecom_encrypted=excluded.wecom_encrypted,enabled=excluded.enabled,updated_by=excluded.updated_by,updated_at=excluded.updated_at,inherit_global=excluded.inherit_global,global_revision=excluded.global_revision').bind(pid,encrypted,mode==='off'?0:1,user.id,now(),mode==='global'?1:0,revision,pid,op)]});return json({ok:true});
+ }
  if(sub==='channels/test'&&method==='POST'){requireReauth(session);partner(state,user);const id=uid();await env.DB.prepare("INSERT INTO outbox(id,project_id,channel,title,body,target,severity,created_at) VALUES(?,?,'wecom','通知渠道测试','由用户主动发起','','info',?)").bind(id,pid,now()).run();await deliverOne(env,id);return json(await one(env,'SELECT status,error FROM outbox WHERE id=?',id));}
- if(sub==='channels/retry'&&method==='POST'){requireReauth(session);partner(state,user);const a=await body(req),item=await one(env,'SELECT * FROM outbox WHERE id=? AND project_id=?',a.id,pid);assert(item,'通知不存在',404);assert(['failed','not_configured','uncertain'].includes(item.status),'该状态不可人工重试');assert(item.status!=='uncertain'||a.acceptPossibleDuplicate===true,'结果不确定，核查服务商回执后确认可能重复发送');await env.DB.prepare("UPDATE outbox SET status='pending',next_at=0,attempts=0 WHERE id=?").bind(item.id).run();await deliverOne(env,item.id);return json(await one(env,'SELECT status,error FROM outbox WHERE id=?',item.id));}
+ if(sub==='channels/retry'&&method==='POST'){
+  requireReauth(session);partner(state,user);const a=await body(req),item=await one(env,'SELECT * FROM outbox WHERE id=? AND project_id=?',a.id,pid);
+  assert(item,'通知不存在',404);assert(['failed','not_configured','uncertain'].includes(item.status),'该状态不可人工重试');assert(item.status!=='uncertain'||a.acceptPossibleDuplicate===true,'结果不确定，核查服务商回执后确认可能重复发送');
+  const key=keyOf(req);assert(typeof key==='string'&&/^[a-zA-Z0-9_-]{12,100}$/.test(key),'缺少有效的请求幂等键');const newId='retry:'+sha(user.id+':'+item.id+':'+key);
+  await env.DB.prepare("INSERT OR IGNORE INTO outbox(id,project_id,user_id,channel,title,body,target,severity,created_at) VALUES(?,?,?,?,?,?,?,?,?)").bind(newId,pid,item.user_id,item.channel,item.title,item.body,item.target,item.severity,now()).run();await deliverOne(env,newId);return json({...await one(env,'SELECT status,error FROM outbox WHERE id=?',newId),id:newId,originalId:item.id});
+ }
  throw new AppError('接口不存在或方法不支持',404);
 }
 function secure(response,req) {
@@ -128,6 +147,9 @@ function secure(response,req) {
 }
 export default {
  async fetch(req,env,ctx){try{return secure(await handle(req,env,ctx),req);}catch(e){if(e instanceof AppError)return secure(json({error:e.message,code:e.code},e.status),req);const id=uid();console.error('request_failed',id,e?.stack||e);return secure(json({error:'操作未完成，请刷新后重试或联系管理员',code:'INTERNAL_ERROR',requestId:id},500),req);}},
- async scheduled(controller,env,ctx){await scheduled(env);await processAiJobs(env);},
+ async scheduled(controller,env,ctx){
+  const failures=[];for(const [name,job] of [['notifications',scheduled],['ai',processAiJobs],['backups',scheduledBackups]])try{await job(env);}catch(error){failures.push(name);await adminAlert(env,'schedule:'+name+':'+now().slice(0,10),'定时任务执行异常',{task:name,note:'请检查部署日志、绑定与配额'}).catch(()=>{});}
+  if(failures.length)throw new Error('Scheduled subsystems failed: '+failures.join(','));
+ },
  async queue(batch,env,ctx){for(const msg of batch.messages){try{await deliverOne(env,msg.body.id);msg.ack();}catch{msg.retry({delaySeconds:60});}}}
 };

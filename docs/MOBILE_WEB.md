@@ -64,3 +64,8 @@ npm run test:mobile
 - 安全区变量与回退：https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/env
 
 浏览器对新属性的支持程度可能不同，代码保留基础高度回退；仍需上述真机验收。
+
+
+## v1.3 新入口
+
+手机菜单新增“账号安全”和项目“移交与退出”；系统管理新增四个运维页面。TOTP录入/恢复码、通知密钥、备份计划、二次确认与退出交接表单遵循现有全屏弹窗、触控和字段换行规范。最新离线屏宽回归见 `ACCEPTANCE_V1_3.md`，仍不代表实际iOS/安卓认证器和软键盘已验收。
