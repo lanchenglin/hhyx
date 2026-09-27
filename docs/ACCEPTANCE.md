@@ -90,3 +90,6 @@ python tests/browser_render.py
 ## v1.1.1 手机Web补充
 
 响应式回归覆盖7种屏幕尺寸的10个页面及长表单/导航/AI交互，共56项；详见`MOBILE_WEB.md`和`test-results/mobile-render-results-v1.1.1.json`。真实手机、软键盘、Cloudflare和在线全流程仍须在部署后验证。
+
+
+当前v1.4实际检查和云端待验收以 `ACCEPTANCE_V1_4.md` 为准；其他版本数字仅是历史记录。

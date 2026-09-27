@@ -23,7 +23,7 @@ export function renameSchema(sql,names,prefix){
  return sql.split(/('(?:[^']|'')*')/g).map((part,i)=>i%2?part:part.replace(/\b[a-zA-Z_][a-zA-Z0-9_]*\b/g,x=>names.has(x)?prefix+x:x)).join('');
 }
 export function validateSnapshot(s){
- assert(s?.format==='hhyx-data-v1'&&Array.isArray(s.schema)&&s.tables&&s.schemaVersion===4,'备份数据库版本不兼容');
+ assert(s?.format==='hhyx-data-v1'&&Array.isArray(s.schema)&&s.tables&&[4,5].includes(s.schemaVersion),'备份数据库版本不兼容');
  assert(Object.keys(s.tables).length===DATA_TABLES.length&&DATA_TABLES.every(n=>Array.isArray(s.tables[n])&&s.tables[n].length<=MAX_ROWS),'备份表数据不完整或超限');
  assert(s.schema.every(o=>['table','index','trigger'].includes(o.type)&&SCHEMA_TABLES.includes(o.tbl_name)&&/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(o.name)&&typeof o.sql==='string'&&/^CREATE\s/i.test(o.sql)),'备份数据库结构无效');
  assert(SCHEMA_TABLES.every(n=>s.schema.some(o=>o.type==='table'&&o.name===n)),'备份数据库缺少表结构');return s;

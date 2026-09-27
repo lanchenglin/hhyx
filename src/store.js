@@ -42,7 +42,7 @@ export async function mutate(env,pid,actor,action,key,options={}) {
   if(previous){assert(previous.request_hash===reqHash,'同一个幂等键不能提交不同内容',409);return {...await readProject(env,pid,actor),idempotent:true};}
   const {row,state}=await load(env,pid);
   let accountGuard='',accountArgs=[];
-  if(!(options.aiSystemVerified&&action.type==='ai.run.finish')){
+  if(!(options.aiSystemVerified&&['ai.run.finish','ai.run.progress'].includes(action.type))){
    const account=await one(env,'SELECT disabled,system_role,auth_version,must_change_password FROM users WHERE id=?',actor.id);
    assert(account&&!account.disabled&&!account.must_change_password,'账号已停用或需要先修改密码',403,'ACCOUNT_RESTRICTED');
    if(actor.auth_version!=null)assert(account.auth_version===actor.auth_version,'账号权限已变化，请重新登录',401,'AUTH_REQUIRED');

@@ -48,7 +48,7 @@ MOCK = r'''f=>{
   return Response.json(data);
  };
 }'''
-HEADINGS = [('overview',fixture['project']['name']),('plan','阶段与合作计划'),('tasks','分工与任务'),('purchases','采购与多人会签'),('decisions','共同决策'),('finance','财务与结算'),('ai','AI分析与风险检查'),('members','合作成员与项目资料'),('audit','审计记录'),('notifications','通知与待办提醒')]
+HEADINGS = [('overview',fixture['project']['name']),('plan','阶段与合作计划'),('tasks','分工与任务'),('purchases','支出／采购与多人会签'),('decisions','共同决策'),('finance','财务与结算'),('ai','AI分析与风险检查'),('members','合作成员与项目资料'),('audit','审计记录'),('notifications','通知与待办提醒')]
 
 def mount(browser, width, height=844, data=None):
     context=browser.new_context(viewport={'width':width,'height':height},has_touch=width<=760,is_mobile=width<=760,device_scale_factor=1)
@@ -139,7 +139,7 @@ with sync_playwright() as pw:
                 page.screenshot(path=str(OUT/'mobile-390-purchase-form.png'))
             close_sheet(page)
             navigate(page,'ai');page.locator('[data-action=ai-brief]').click()
-            sheet_check(page,f'{width}x{height}：业务资料与三场景长表单可滚动')
+            sheet_check(page,f'{width}x{height}：通用项目情况表单窄屏可用')
             close_sheet(page)
             page.locator('[data-action=ai-new][data-kind=project]').click()
             sheet_check(page,f'{width}x{height}：AI发送预览与未勾选确认')

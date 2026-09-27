@@ -39,7 +39,7 @@ export async function captureSnapshot(env){
  assert(b[1].results[0].bytes<=MAX_SNAPSHOT_BYTES,'数据库内容超过16MiB备份容量，请改用运维D1导出，不会生成截断备份',413);
  assert(sha(b[0].results)===sha(schema),'捕获期间数据库结构变化，请部署稳定后重试',409);
  const tables=Object.fromEntries(DATA_TABLES.map((n,i)=>[n,b[i+2].results]));for(const n of DATA_TABLES)assert(tables[n].length<=MAX_ROWS,'表 '+n+' 超过单次10000行容量，未生成部分备份',413);
- const s={format:'hhyx-data-v1',schemaVersion:4,capturedAt:now(),schema,tables,omitted:['sessions','rate_limits','backup_jobs'],note:'会话、临时限流和运行中备份任务不恢复；部署Secrets与外部服务账号须另外安全保管。'};
+ const s={format:'hhyx-data-v1',schemaVersion:5,capturedAt:now(),schema,tables,omitted:['sessions','rate_limits','backup_jobs'],note:'会话、临时限流和运行中备份任务不恢复；部署Secrets与外部服务账号须另外安全保管。'};
  validateSnapshot(s);const bytes=Buffer.from(JSON.stringify(s));assert(bytes.length<=MAX_SNAPSHOT_BYTES,'序列化备份超过16MiB容量，未生成截断备份',413);return {snapshot:s,bytes};
 }
 async function putPart(env,job,name,plain){const key=backupKey(env,job.key_id).key,cipher=sealBytes(plain,key,`${job.id}:${name}`),objectKey=`v1/${job.id}/${name}`;await env.BACKUPS.put(objectKey,cipher,{httpMetadata:{contentType:'application/octet-stream'}});return {name,objectKey,bytes:plain.length,cipherBytes:cipher.length,sha256:sha(plain),cipherSha256:sha(cipher)};}

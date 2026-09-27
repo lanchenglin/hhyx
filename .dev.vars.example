@@ -9,20 +9,17 @@ ALIYUN_ACCESS_KEY_SECRET=
 ALIYUN_SMS_SIGN_NAME=
 ALIYUN_SMS_TEMPLATE_CODE=
 
-# AI 默认关闭：下列均为注释，必须由部署者选择模型并填写真实费率后再启用。
+# AI 默认关闭。主要配置只有URL/Model/Key与协议，完成项目全员授权后才发送。
 # API Key 仅在服务端；生产使用 wrangler secret put AI_API_KEY，不放入普通 vars。
 # AI_PROVIDER=openai_compatible
 # AI_BASE_URL=https://api.openai.com/v1
 # AI_MODEL=这里替换为已获授权且支持该接口的模型ID
 # AI_API_KEY=这里替换为本地开发专用密钥
-# AI_INPUT_CENTS_PER_MILLION=这里填写输入每百万token的人民币分整数
-# AI_OUTPUT_CENTS_PER_MILLION=这里填写输出每百万token的人民币分整数
-# AI_OUTPUT_TOKENS=4096
-# AI_STRUCTURED_OUTPUT=true
+# 不需要填写token单价。输出保护/特殊网关协议由后端管理，详见AI_ANALYSIS.md。
 # 第三方网关还需在服务端明确允许其域名，逗号分隔；勿使用无关项目凭据。
 # AI_ALLOWED_HOSTS=api.example.com
 # Anthropic 原生：AI_PROVIDER=anthropic，AI_BASE_URL=https://api.anthropic.com/v1
-# 配置后仍需每个项目全员批准“AI授权与费用规则”，不会自动发送现有项目资料。
+# 配置后仍需每个项目全员批准“AI授权与金额分级”，不会自动发送现有项目资料。
 
 # v1.2：可选新空站点管理员。切勿把共享默认密码写入本文件或Git。
 # INITIAL_ADMIN_ENABLED=true

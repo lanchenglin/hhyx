@@ -1,10 +1,11 @@
+import {purchaseAnalysisDecision} from './purchase-analysis.js';
 import {resolveAiEnv} from './system-config.js';
-import { assert, AppError, body, json, now, sha } from './util.js';
+import { assert, AppError, body, json, now, sha, uid } from './util.js';
 import { load, one, rows, mutate } from './store.js';
 import { partner, getMember } from './domain.js';
 import { publicEngine, aiConsentValid, aiUsage, AI_SCOPE } from './ai-policy.js';
 import { buildSnapshot } from './ai-snapshot.js';
-import { reserveEstimate, invokeProvider } from './ai-provider.js';
+import { invokeProvider, usageSummary } from './ai-provider.js';
 import { requireReauth, rateLimit } from './auth.js';
 const pending=['queued','running'];
 const keyOf=req=>req.headers.get('x-idempotency-key');
@@ -19,7 +20,8 @@ export async function aiOverview(env,pid,state,offset=0) {
  return {engine,consented:aiConsentValid(state,engine),policy:state.ai?.policy||null,suspended:!!state.ai?.suspended,
   usage:aiUsage(state),runs:items.map(j=>({...publicJob(j,state),accounting:(state.ai?.runs||[]).find(x=>x.id===j.id)})),total:count.n,nextOffset:offset+items.length<count.n?offset+items.length:null,
   scope:AI_SCOPE,scopeNotice:'仅发送预览中的匿名分工、计划、金额摘要、采购理由和补充资料；不发送账号、联系方式、付款凭证、原附件、API密钥、完整审计或聊天。自由文本仍可能含隐私，请先检查预览。未联网核查市场。',
-  budgetNotice:'UTC自然月；费用依据服务端人工配置的人民币费率估算，不是服务商账单。未知计费保留预占，应用额度不能代替服务商预算限制。'};
+  budgetNotice:'按UTC自然月记录调用次数及服务商返回的用量，不估算金额。一次报告最多2次调用（截断时补齐）；失败/未知调用也计数。实际费用以服务商账单为准。',
+  purchaseAssessments:state.purchases.map(q=>({id:q.id,...purchaseAnalysisDecision(state,q)}))};
 }
 export async function requestAnalysis(env,pid,actor,a,key,{automatic=false}={}) {
  env=await resolveAiEnv(env);
@@ -38,9 +40,11 @@ export async function requestAnalysis(env,pid,actor,a,key,{automatic=false}={}) 
  if(good)return {id:good.id,cached:true,status:good.status};
  const prior=same.findLast(j=>['failed','uncertain'].includes(j.status));
  assert(!prior||(!automatic&&a.retry===true&&a.acceptPossibleCharge===true),'相同输入已有失败/不确定调用；请核对记录并确认再次调用可能计费，系统不会自动重试',409);
- const record={id,kind,targetId,inputRevision:row.revision,targetVersion:snapshot.targetVersion,snapshotHash:snapshot.hash,engineFingerprint:engine.fingerprint,requestHash,reserveCents:reserveEstimate(engine,snapshot.body),automatic};
+ const callSlots=Math.min(2,state.ai.policy.monthlyCallLimit-aiUsage(state).calls);
+ assert(callSlots>=1,'已达到项目月调用上限',429);
+ const record={id,kind,targetId,inputRevision:row.revision,targetVersion:snapshot.targetVersion,snapshotHash:snapshot.hash,engineFingerprint:engine.fingerprint,requestHash,reserveCents:0,accountingVersion:2,callSlots,automatic};
  await mutate(env,pid,actor,{type:'ai.run.request',data:record},key,{aiVerified:true,aiEngine:engine,requiredRevision:row.revision,extraStatements:(e,pid,op)=>[
-  conditional(e,"INSERT INTO ai_jobs(id,project_id,actor_id,kind,target_id,snapshot_hash,snapshot,engine,status,created_at) SELECT ?,?,?,?,?,?,?,?,'queued',?",[id,pid,actor.id,kind,targetId,snapshot.hash,JSON.stringify(snapshot.body),JSON.stringify(engine),now()],pid,op)
+  conditional(e,"INSERT INTO ai_jobs(id,project_id,actor_id,kind,target_id,snapshot_hash,snapshot,engine,status,created_at,call_limit) SELECT ?,?,?,?,?,?,?,?,'queued',?,?",[id,pid,actor.id,kind,targetId,snapshot.hash,JSON.stringify(snapshot.body),JSON.stringify(engine),now(),callSlots],pid,op)
  ]});
  return {id,cached:false,status:'queued'};
 }
@@ -48,26 +52,47 @@ async function finishRun(env,j,result) {
  const {state}=await load(env,j.project_id),record=(state.ai?.runs||[]).find(x=>x.id===j.id);
  if(!record||!pending.includes(record.status))return;
  const reportHash=result.report?sha(result.report):null;
- // Unknown usage conservatively keeps the whole estimate; known usage never silently erases uncertainty.
- const chargeCents=result.status==='cancelled'?0:result.usage?.estimateCents??record.reserveCents;
- const data={id:j.id,status:result.status,errorCode:result.errorCode||null,error:result.error||null,usage:result.usage||null,chargeCents,reportHash};
+ const log=JSON.parse(j.usage_log||'[]');
+ const accounting=usageSummary(log);
+ // attempts is increased immediately before a request. If a legacy lease is lost,
+ // conservatively count one possible call rather than pretending it was free.
+ const sentCalls=j.attempts||(result.errorCode==='INTERRUPTED'?1:0);
+ const data={id:j.id,status:result.status,errorCode:result.errorCode||null,error:result.error||null,
+  ...accounting,unknownUsageCalls:accounting.unknownUsageCalls+Math.max(0,sentCalls-log.length),sentCalls,chargeCents:0,reportHash};
  await mutate(env,j.project_id,system,{type:'ai.run.finish',data},'ai_finish_'+j.id,{aiSystemVerified:true,extraStatements:(e,pid,op)=>[
-  e.DB.prepare('UPDATE ai_jobs SET status=?,finished_at=?,error_code=?,error=?,lease_until=0 WHERE id=? AND project_id=? AND EXISTS(SELECT 1 FROM projects WHERE id=? AND last_operation=?)').bind(data.status,now(),data.errorCode,data.error,j.id,pid,pid,op),
+  e.DB.prepare('UPDATE ai_jobs SET status=?,finished_at=?,error_code=?,error=?,lease_until=0,lease_token=NULL,continuation=NULL WHERE id=? AND project_id=? AND EXISTS(SELECT 1 FROM projects WHERE id=? AND last_operation=?)').bind(data.status,now(),data.errorCode,data.error,j.id,pid,pid,op),
   ...(result.report?[conditional(e,'INSERT INTO ai_reports(job_id,project_id,report,report_hash,created_at) SELECT ?,?,?,?,?',[j.id,pid,JSON.stringify(result.report),reportHash,now()],pid,op)]:[])
  ]});
 }
 export async function runAiJob(env,id) {
- const claim=await env.DB.prepare("UPDATE ai_jobs SET status='running',lease_until=? WHERE id=? AND status='queued'").bind(Date.now()+60000,id).run();
+ const token=uid();
+ const claim=await env.DB.prepare("UPDATE ai_jobs SET status='running',lease_until=?,lease_token=? WHERE id=? AND status='queued'").bind(Date.now()+60000,token,id).run();
  if(!claim.meta.changes)return;
- const j=await one(env,'SELECT * FROM ai_jobs WHERE id=?',id);
+ let j=await one(env,'SELECT * FROM ai_jobs WHERE id=?',id);
  const {state}=await load(env,j.project_id);
- try{env=await resolveAiEnv(env);}catch{await finishRun(env,j,{status:'cancelled',errorCode:'AI_CONFIG_ERROR',error:'发送前配置不可用，未调用模型。'});return;}
+ try{env=await resolveAiEnv(env);}catch{await finishRun(env,j,{status:'cancelled',errorCode:'AI_CONFIG_ERROR',error:'后续发送前配置不可用；已发生调用仍计数。'});return;}
  const engine=publicEngine(env);const account=await one(env,'SELECT disabled,must_change_password FROM users WHERE id=?',j.actor_id);
  const allowed=account&&!account.disabled&&!account.must_change_password&&aiConsentValid(state,engine)&&state.members.some(m=>m.active&&m.userId===j.actor_id);
  if(!allowed||currentHash(state,j)!==j.snapshot_hash||engine.fingerprint!==JSON.parse(j.engine).fingerprint) {
-  await finishRun(env,j,{status:'cancelled',errorCode:'INPUT_OR_CONSENT_CHANGED',error:'发送前资料、成员或授权发生变化，已取消，未调用模型。'});return;
+  await finishRun(env,j,{status:'cancelled',errorCode:'INPUT_OR_CONSENT_CHANGED',error:'后续发送前资料、成员或授权发生变化，已取消；已发出请求不可收回。'});return;
  }
- const result=await invokeProvider(env,engine,JSON.parse(j.snapshot));
+ if(j.attempts>=j.call_limit){await finishRun(env,j,{status:'failed',errorCode:'OUTPUT_TRUNCATED',error:'报告未补齐且已达到本次调用保护上限；未作为有效报告。'});return;}
+ const sent=await env.DB.prepare('UPDATE ai_jobs SET attempts=attempts+1 WHERE id=? AND status=\'running\' AND lease_token=? AND attempts<call_limit').bind(id,token).run();
+ if(!sent.meta.changes)return;
+ j=await one(env,'SELECT * FROM ai_jobs WHERE id=?',id);
+ const result=await invokeProvider(env,engine,JSON.parse(j.snapshot),j.continuation||'');
+ const log=[...JSON.parse(j.usage_log||'[]'),{attempt:j.attempts,status:result.status,usage:result.usage||null}];
+ const saved=await env.DB.prepare("UPDATE ai_jobs SET usage_log=? WHERE id=? AND status='running' AND lease_token=?").bind(JSON.stringify(log),id,token).run();
+ if(!saved.meta.changes)return; // A recovered/expired lease must never overwrite its terminal result.
+ j.usage_log=JSON.stringify(log);
+ if(result.status==='truncated'&&j.attempts<j.call_limit){
+  const accounting=usageSummary(log),data={id,sentCalls:j.attempts,...accounting};
+  await mutate(env,j.project_id,system,{type:'ai.run.progress',data},'ai_progress_'+id+'_'+j.attempts,{aiSystemVerified:true,extraStatements:(e,pid,op)=>[
+   e.DB.prepare("UPDATE ai_jobs SET status='queued',continuation=?,lease_until=0,lease_token=NULL WHERE id=? AND status='running' AND lease_token=? AND EXISTS(SELECT 1 FROM projects WHERE id=? AND last_operation=?)").bind(result.partial,id,token,pid,op)
+  ]});
+  return; // Persisted continuation is handled by the next dispatcher, not page refresh.
+ }
+ if(result.status==='truncated')Object.assign(result,{status:'failed',errorCode:'OUTPUT_TRUNCATED',error:'长度中断后仍未形成完整报告，已停止；没有当作成功，未无限续写。'});
  await finishRun(env,j,result);
 }
 export async function processAiJobs(env) {
@@ -82,7 +107,10 @@ export async function autoAnalysis(env,pid,actor,action) {
  const {state}=await load(env,pid),policy=state.ai?.policy;
  if(!policy||!aiConsentValid(state,publicEngine(env)))return;
  let kind,targetId;
- if(action.type==='purchase.submit'&&policy.autoPurchase){kind='purchase';targetId=action.data.id;}
+ if(action.type==='purchase.submit'&&policy.autoPurchase){
+  const q=state.purchases.find(x=>x.id===action.data.id);if(!q||!purchaseAnalysisDecision(state,q).required)return;
+  kind='purchase';targetId=q.id;
+ }
  if(action.type==='proposal.vote'&&policy.autoStage){const g=state.proposals.find(x=>x.id===action.data.id);if(g?.status==='approved'&&['stage_open','stage_close'].includes(g.kind)){kind='stage';targetId=g.payload.stageId;}}
  if(!kind)return;
  try{
@@ -111,14 +139,14 @@ export async function aiRoute(req,env,ctx,{pid,state,user,session,sub,url}) {
  if(sub==='ai'&&method==='GET')return json(await aiOverview(env,pid,state,Math.max(0,Math.min(10000,Number.parseInt(url.searchParams.get('offset')||'0',10)||0))));
  if(sub==='ai/preview'&&method==='POST') {
   partner(state,user);const a=await body(req),snapshot=buildSnapshot(state,a.kind,a.targetId||'');
-  const engine=publicEngine(env);return json({...snapshot,reserveCents:engine.configured?reserveEstimate(engine,snapshot.body):null,engine,consented:aiConsentValid(state,engine)});
+  const engine=publicEngine(env);return json({...snapshot,callSlots:engine.configured?Math.max(0,Math.min(2,(state.ai?.policy?.monthlyCallLimit||30)-aiUsage(state).calls)):0,engine,consented:aiConsentValid(state,engine),purchaseAssessment:a.kind==='purchase'?purchaseAnalysisDecision(state,state.purchases.find(q=>q.id===a.targetId)):null});
  }
  if(sub==='ai/policy'&&method==='POST') {
   requireReauth(session);partner(state,user);const a=await body(req),engine=publicEngine(env);
   assert(engine.configured,engine.error||'请先配置服务端模型',503);
   assert(a.confirmScope===true&&a.engineFingerprint===engine.fingerprint,'请阅读发送范围并确认当前模型配置',409);
-  const payload={provider:engine,scope:AI_SCOPE,monthlyCallLimit:a.monthlyCallLimit,monthlyBudgetCents:a.monthlyBudgetCents,autoPurchase:a.autoPurchase,autoStage:a.autoStage};
-  return json(await mutate(env,pid,user,{type:'proposal.submit',data:{kind:'ai_policy',payload,reason:'确认外部AI发送范围、模型、费用额度及触发规则（不授予审批权）'}},keyOf(req),{aiPolicyVerified:true}));
+  const payload={provider:engine,scope:AI_SCOPE,monthlyCallLimit:a.monthlyCallLimit,purchaseThresholdCents:a.purchaseThresholdCents,reportStyle:a.reportStyle,autoPurchase:a.autoPurchase,autoStage:a.autoStage};
+  return json(await mutate(env,pid,user,{type:'proposal.submit',data:{kind:'ai_policy',payload,reason:'确认外部AI发送范围、模型、调用上限及金额分级（不授予审批权）'}},keyOf(req),{aiPolicyVerified:true}));
  }
  if(sub==='ai/runs'&&method==='POST') {
   requireReauth(session);partner(state,user);await rateLimit(env,`ai:${pid}:${user.id}`,20,3600);

@@ -106,10 +106,10 @@ proposal支持：ai_policy（仅专用AI接口建立）、baseline、budget、st
 | 方法/路径 | 输入与输出 |
 |---|---|
 | GET /ai?offset=0 | 模型公开配置（无Key）、项目授权、UTC月额度、50条分页历史/过期状态 |
-| POST /ai/preview | `{kind:"project"或"purchase"或"stage", targetId}`；返回真实脱敏body、hash、本地规则和预占费用，不发送模型 |
-| POST /ai/policy | `{engineFingerprint, confirmScope:true, monthlyCallLimit, monthlyBudgetCents, autoPurchase, autoStage}`；建立全员提案 |
+| POST /ai/preview | `{kind:"project"或"purchase"或"stage", targetId}`；返回真实脱敏body、hash、本地规则和预占调用次数，不发送模型 |
+| POST /ai/policy | `{engineFingerprint, confirmScope:true, monthlyCallLimit, purchaseThresholdCents, reportStyle, autoPurchase, autoStage}`；建立全员提案 |
 | POST /ai/runs | `{kind,targetId,previewHash,confirmSend:true}`；返回202排队或200复用及id；失败同输入重试须额外 `retry:true,acceptPossibleCharge:true` |
-| GET /ai/runs/:id | 冻结快照、报告、来源、模型配置、费用、处置记录与关联任务 |
+| GET /ai/runs/:id | 冻结快照、报告、来源、模型配置、尝试用量、处置记录与关联任务 |
 | GET /ai/runs/:id/export | 同上JSON附件，不含服务端密钥 |
 | POST /ai/runs/:id/reviews | `{findingId,disposition:"supplement"或"mitigate"或"accept_risk",note}`；追加记录，不改报告或采购批准 |
 | POST /ai/runs/:id/tasks | `{index,confirm:true,title,description,deliverable,stageId,assigneeId,reviewerId,dueDate}`；人工确认后使用原task.add规则，旧报告还须confirmStale:true |
@@ -118,7 +118,7 @@ proposal支持：ai_policy（仅专用AI接口建立）、baseline、budget、st
 
 AI任务状态：queued → running → completed/failed/uncertain；发送前授权或资料变化可cancelled。租约中断只标不确定，不自动重发。业务层/AI供应商没有删除历史报告的接口。
 
-403为项目/角色不符；409为预览/授权过期、幂等冲突或重试缺确认；429为费用/调用数/并发/速率限制；503为服务端模型未配置。错误不是风险分析结论。
+403为项目/角色不符；409为预览/授权过期、幂等冲突或重试缺确认；429为调用数/并发/速率限制；503为服务端模型未配置。错误不是风险分析结论。
 
 项目 `/export` 更新为schemaVersion 2，附 `aiManifest`（id/hash/详情链接）而不是内嵌所有AI输入。批量完整备份仍需D1导出，并另存R2。`src/ai-policy.js`授权配置，`ai-snapshot.js`脱敏和本地计算，`ai-provider.js`协议/报告校验，`ai.js`队列/API，`public/ai-ui.js`界面。初次和升级均须应用 `0002_ai_analysis.sql`。
 
@@ -143,7 +143,7 @@ AI任务状态：queued → running → completed/failed/uncertain；发送前�
 | POST /api/admin/projects/:id/lifecycle | action=archive/unarchive/trash/restore，expectedRevision、confirmName、confirmImpact、reason |
 | POST /api/admin/projects/:id/members | memberId/role/expectedRevision/reason；正式项目生成全员提议 |
 | GET /api/admin/ai-settings | 无Key明文的配置视图和revision |
-| POST /api/admin/ai-settings | enabled/provider/baseUrl/model/key或clearKey/inputCentsPerMillion/outputCentsPerMillion/outputTokens/structured/expectedRevision/reason；第三方需要confirmExternalHost |
+| POST /api/admin/ai-settings | enabled/provider/baseUrl/model/key或clearKey/expectedRevision/reason，可选analysisGuidance；第三方需要confirmExternalHost |
 | POST /api/admin/ai-settings/test | expectedRevision、confirmCost=true；可能计费、限流、无项目数据 |
 | GET /api/admin/audit?before=&action= | 管理日志分页、按动作筛选 |
 
@@ -184,3 +184,15 @@ AI任务状态：queued → running → completed/failed/uncertain；发送前�
 - `exit.payment` 是动作type而不是proposal：data `{id:exitPlanId,amountCents,evidence,attachments?}`，按批准净额方向登记，不转账，仍走 `ledger.verify` 不同成员复核。
 
 MFA常见错误码：`MFA_REQUIRED`、`MFA_STEPUP_REQUIRED`、`MFA_SETUP_REQUIRED`、`MFA_INVALID`。接口被拒绝不代表验证码通过；报告过期或资料冲突为409，不得自动重试投票忽略新内容。
+
+
+## v1.4 轻量AI和支出（0005迁移）
+
+- 管理员 `/api/admin/ai-settings` 主字段：enabled/provider/baseUrl/model/key/expectedRevision/reason，可选clearKey/confirmExternalHost/analysisGuidance。价格/输出限制不再必填；仍要求管理员、本人验证、版本和加密。GET包含只读prompts目录，绝不回显已保存Key。
+- `/ai/policy` 字段：engineFingerprint、confirmScope=true、monthlyCallLimit、purchaseThresholdCents（整数分，缺省50000）、reportStyle（concise/standard/detailed）、autoPurchase、autoStage。创建全员提议，不直接生效；scope升级project-minimal-v2，policy.version=2。
+- `ai.materials` 接受context/focus，按字段合并，保留未提交的旧business/customers/channels/economics/validation/risks/scenarios。不是PATCH批准计划。
+- `/ai/preview` 新增callSlots、purchaseAssessment；不调用AI。`/ai` 返回usage的actualCalls/reservedCalls/inputTokens/outputTokens/unknownUsageCount，以及purchaseAssessments。次数按UTC月，未知usage不是免费。
+- 新job保存attempts、call_limit、usage_log、continuation、lease_token。accounting包含sentCalls/unknownUsageCalls，截断待补齐时continuationPending=true。旧reserveCents/chargeCents字段仅历史兼容，新记录的0不能解释为真实零成本。
+- `ai.run.progress` 与request/finish一样只允许内部验证服务使用，普通actions端点拒绝伪造。补齐仍检查身份、授权、输入和配置。
+- `purchase.save` 可选purpose（daily/content/software/promotion/outsourcing/equipment/goods/other）、commitmentGroup（同事项标签，最多100字符）、simpleForm。simpleForm=true必须单条数量1；必填原阶段、收款对象、付款安排及不同执行/验收人不取消。quote/risk/exitPlan可空，空值不是无风险。金额来自items，不信任客户端另外传的amount或分析判断。
+- GET项目的每张采购单包含后端派生analysisAssessment，列出阈值、自身/累计金额、相关ID及原因；派生判断不写回业务签名快照。自动调用只在有效授权范围内发生。

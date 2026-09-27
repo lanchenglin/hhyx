@@ -1,3 +1,4 @@
+import {purchaseAnalysisDecision} from './purchase-analysis.js';
 import {openExit,governanceHash,exitBasis,exitPaid,exitHold,exitProfitHold,exitProfitDistributed,validateExit,applyHandover,verifyExitReady} from './continuity.js';
 // 所有业务状态通过同一 reducer 修改；数据库以项目 revision 做 CAS，保证多名审批人并发时的预算与会签一致。
 import { assert, text, cents, email, date, sha } from './util.js';
@@ -6,7 +7,7 @@ import { validateBrief, validatePolicy, aiConsentValid, aiUsage } from './ai-pol
 export const ACTIONS = {
  'exit.payment':'登记退出清算实际收付',
  'admin.lifecycle':'管理员调整项目生命周期','admin.member.role':'管理员提议项目成员权限变更',
- 'ai.materials':'更新分析补充资料','ai.suspend':'暂停外部AI发送','ai.run.request':'请求AI分析','ai.run.finish':'记录AI分析结果','ai.review':'记录AI风险处置',
+ 'ai.materials':'更新分析补充资料','ai.suspend':'暂停外部AI发送','ai.run.request':'请求AI分析','ai.run.progress':'保存AI补齐进度','ai.run.finish':'记录AI分析结果','ai.review':'记录AI风险处置',
  'plan.update':'修改筹备计划','member.remove':'移除筹备成员','member.add':'添加筹备成员','member.join':'成员接受邀请',
  'task.add':'创建任务','task.progress':'提交任务进度','task.accept':'验收任务',
  'proposal.submit':'提交共同决策','proposal.vote':'共同决策表态','proposal.cancel':'撤回共同决策',
@@ -91,9 +92,12 @@ function purchaseInput(p,a,id) {
  const items=a.items.map(i=>({name:text(i.name,'商品名称',120),spec:text(i.spec,'规格',300,false),quantity:cents(i.quantity,'数量'),unitCents:cents(i.unitCents,'单价',true)}));
  assert(items.every(i=>i.quantity<=1000000&&Number.isSafeInteger(i.quantity*i.unitCents)), '数量或金额超出范围');
  const q={id,title:text(a.title,'采购标题',150),category:a.category||'inventory',stageId:text(a.stageId,'阶段',100),items,
- supplier:text(a.supplier,'供应商',200),payee:text(a.payee,'收款对象/账号',250),paymentTerms:text(a.paymentTerms,'付款条件',1000),
- reason:text(a.reason,'采购原因',3000),risk:text(a.risk,'风险说明',2000),exitPlan:text(a.exitPlan,'退出/退货方案',2000),quote:proof(a.quote),
+ supplier:text(a.supplier,'商家/服务方',200),payee:text(a.payee,'收款对象/账号',250),paymentTerms:text(a.paymentTerms,'付款条件',1000),
+ purpose:text(a.purpose||'other','支出用途',30),commitmentGroup:text(a.commitmentGroup,'关联支出事项',100,false),simpleForm:a.simpleForm===true,
+ reason:text(a.reason,'采购原因',3000),risk:text(a.risk,'风险说明',2000,false),exitPlan:text(a.exitPlan,'退出/退货方案',2000,false),quote:text(a.quote,'报价依据',3000,false),
  attachments:attachmentIds(a.attachments),dueDate:date(a.dueDate,true),expiresAt:date(a.expiresAt,true),executorId:a.executorId,receiverId:a.receiverId};
+ assert(['daily','content','software','promotion','outsourcing','equipment','goods','other'].includes(q.purpose),'支出用途不正确');
+ assert(!q.simpleForm||(q.items.length===1&&q.items[0].quantity===1),'快速申请须为一笔明确的总额');
  assert(['inventory','expense'].includes(q.category),'采购类别不正确'); stageFrom(p,q.stageId); cents(purchaseTotal(q),'采购总额');
  for(const k of ['executorId','receiverId'])assert(activeMembers(p).some(m=>m.id===q[k]&&m.role!=='viewer'&&m.userId),'执行人/验收人必须为已加入的可执行成员');
  assert(q.executorId!==q.receiverId,'采购执行人与验收人应分开'); return q;
@@ -125,12 +129,12 @@ function validateRoleChange(p,a){
  return m;
 }
 export function reduceProject(original, action, actor, ctx) {
- const p=clone(original), a=action.data||{}, at=ctx.at, today=ctx.today||ctx.at.slice(0,10), mid=ctx.adminVerified&&action.type.startsWith('admin.') ? {id:actor.id,name:actor.name} : action.type==='ai.run.finish'&&ctx.aiSystemVerified ? {id:'system:ai',name:'AI任务服务'} : action.type==='member.join'&&ctx.inviteVerified ? p.members.find(m=>m.id===a.memberId&&m.email===actor.email) : getMember(p,actor), events=[];
+ const p=clone(original), a=action.data||{}, at=ctx.at, today=ctx.today||ctx.at.slice(0,10), mid=ctx.adminVerified&&action.type.startsWith('admin.') ? {id:actor.id,name:actor.name} : ['ai.run.finish','ai.run.progress'].includes(action.type)&&ctx.aiSystemVerified ? {id:'system:ai',name:'AI任务服务'} : action.type==='member.join'&&ctx.inviteVerified ? p.members.find(m=>m.id===a.memberId&&m.email===actor.email) : getMember(p,actor), events=[];
  assert(ACTIONS[action.type],'不支持的操作',400);
- assert((p.lifecycle||'active')==='active'||(ctx.adminVerified&&action.type==='admin.lifecycle')||(ctx.aiSystemVerified&&action.type==='ai.run.finish'),'项目已归档或放入回收站，当前只读；请由管理员恢复后再操作',409,'PROJECT_READ_ONLY');
+ assert((p.lifecycle||'active')==='active'||(ctx.adminVerified&&action.type==='admin.lifecycle')||(ctx.aiSystemVerified&&['ai.run.finish','ai.run.progress'].includes(action.type)),'项目已归档或放入回收站，当前只读；请由管理员恢复后再操作',409,'PROJECT_READ_ONLY');
  const exiting=openExit(p);
  if(exiting&&action.type==='admin.member.role')assert(false,'退出清算期间不能变更项目成员角色',409);
- if(exiting&&!action.type.startsWith('admin.')&&!['ai.run.finish','ai.review','purchase.read','purchase.comment','purchase.pay','purchase.receive','task.progress','task.accept','ledger.add','ledger.verify','ledger.reverse','exit.payment','attachment.add','project.pause','proposal.submit','proposal.vote','proposal.cancel','channel.update'].includes(action.type))assert(false,'退出清算期间仅处理既有交接、账目和结清，不新增承诺或变更成员',409);
+ if(exiting&&!action.type.startsWith('admin.')&&!['ai.run.finish','ai.run.progress','ai.review','purchase.read','purchase.comment','purchase.pay','purchase.receive','task.progress','task.accept','ledger.add','ledger.verify','ledger.reverse','exit.payment','attachment.add','project.pause','proposal.submit','proposal.vote','proposal.cancel','channel.update'].includes(action.type))assert(false,'退出清算期间仅处理既有交接、账目和结清，不新增承诺或变更成员',409);
  const notify=(title,body='',severity='info',target='',recipients=null)=>events.push({title,body,severity,target,recipients});
  const requirePartner=()=>partner(p,actor);
  const requireDraft=()=>{ requirePartner(); assert(p.ownerId===actor.id,'筹备期由创建人编辑，生效须全体确认',403); assert(p.status==='draft','正式生效后必须提交共同决策变更'); notBaselinePending(p); };
@@ -154,7 +158,7 @@ export function reduceProject(original, action, actor, ctx) {
  case 'ai.materials': {
   requirePartner(); p.ai ||= {runs:[],reviews:[],briefHistory:[]};
   if(p.ai.brief)p.ai.briefHistory.push(p.ai.brief);
-  p.ai.brief={version:(p.ai.brief?.version||0)+1,data:validateBrief(a),at,authorId:mid.id};
+  p.ai.brief={version:(p.ai.brief?.version||0)+1,data:validateBrief(a,p.ai.brief?.data||{}),at,authorId:mid.id};
   notify('项目分析补充资料已更新','补充资料不修改原批准计划，旧分析将按输入变化标记过期。','info','ai');break;
  }
  case 'ai.suspend': {
@@ -167,16 +171,22 @@ export function reduceProject(original, action, actor, ctx) {
   const u=aiUsage(p,at.slice(0,7)), policy=p.ai.policy;
   assert(!p.ai.runs.some(j=>['queued','running'].includes(j.status)),'本项目已有分析排队/运行中，请先查看其结果',409);
   assert(p.ai.runs.length<1000,'分析记录达到本版上限，请导出归档',409);
-  assert(u.calls+1<=policy.monthlyCallLimit,'已达到项目月调用上限',429);
-  assert(u.budgetUsedCents+a.reserveCents<=policy.monthlyBudgetCents,'本次保守费用预占将超过月预算，未调用模型',429);
-  p.ai.runs.push({...a,status:'queued',month:at.slice(0,7),createdAt:at,actorId:mid.id,chargeCents:null,usage:null});
+  assert(Number.isInteger(a.callSlots)&&a.callSlots>=1&&a.callSlots<=2,'分析调用预占无效');
+  assert(u.calls+a.callSlots<=policy.monthlyCallLimit,'已达到项目月调用上限',429);
+  p.ai.runs.push({...a,status:'queued',month:at.slice(0,7),createdAt:at,actorId:mid.id,sentCalls:0,unknownUsageCalls:0,chargeCents:null,usage:null});
   notify('已请求项目AI分析','报告只辅助判断，不代表批准；同一输入将复用已有有效报告。','info','ai');break;
+ }
+ case 'ai.run.progress': {
+  assert(ctx.aiSystemVerified,'仅任务服务可写入续写状态',403);const run=getById(p.ai?.runs||[],a.id,'分析');
+  assert(['queued','running'].includes(run.status),'分析已结束',409);
+  Object.assign(run,{status:'queued',continuationPending:true,sentCalls:a.sentCalls,usage:a.usage,unknownUsageCalls:a.unknownUsageCalls||0});
+  break;
  }
  case 'ai.run.finish': {
   assert(ctx.aiSystemVerified,'仅任务服务可写入分析结果',403);const run=getById(p.ai?.runs||[],a.id,'分析');
   assert(['queued','running'].includes(run.status),'该分析已结束',409);
   assert(['completed','failed','uncertain','cancelled'].includes(a.status),'分析结果状态不正确');
-  Object.assign(run,{status:a.status,finishedAt:at,error:a.error||null,errorCode:a.errorCode||null,usage:a.usage||null,chargeCents:a.chargeCents,reportHash:a.reportHash||null});
+  Object.assign(run,{status:a.status,finishedAt:at,error:a.error||null,errorCode:a.errorCode||null,usage:a.usage||null,sentCalls:a.sentCalls??run.sentCalls??0,unknownUsageCalls:a.unknownUsageCalls||0,continuationPending:false,chargeCents:a.chargeCents,reportHash:a.reportHash||null});
   notify(a.status==='completed'?'AI分析报告已生成':'AI分析未完成',a.status==='completed'?'请查看来源、风险和待共同决定事项；AI没有投票权。':a.error||'未形成有效结论','info','ai');break;
  }
  case 'ai.review': {
@@ -363,4 +373,4 @@ export function reduceProject(original, action, actor, ctx) {
  assert(new TextEncoder().encode(JSON.stringify(p)).length<=1400000,'该项目记录接近第一版容量上限，请导出归档并新建下一期项目',409);
  return {state:p,events,summary:ACTIONS[action.type]};
 }
-export function projectView(p,actor) {const member=getMember(p,actor);return {...p,currentMemberId:member.id,finance:finance(p)};}
+export function projectView(p,actor) {const member=getMember(p,actor);return {...p,purchases:p.purchases.map(q=>({...q,analysisAssessment:purchaseAnalysisDecision(p,q)})),currentMemberId:member.id,finance:finance(p)};}

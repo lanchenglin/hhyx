@@ -19,7 +19,7 @@ export function createAdminUI({S,e,api,reauth,showForm,showInfo,render,btn,panel
  function pager(){const next=data.nextOffset??data.nextBefore;return `<div class="admin-pagination">${offset||before?button('返回第一页','first','','small'):''}${next!=null?button('下一页','next',`data-next="${next}"`,'small'):''}</div>`;}
  function card(title,value,note){return `<section class="metric"><div class="metric-label">${e(title)}</div><div class="metric-value">${e(value)}</div><p class="metric-note">${e(note)}</p></section>`;}
  function page(){
-  let html=`<div class="page-head"><div><div class="eyebrow">SYSTEM ADMIN / V1.3.0</div><h1>系统管理</h1><p>管理账号、项目生命周期和平台配置；不代替任何合伙人审批。</p></div><div class="buttons">${button('刷新','refresh','','small')}${button('返回我的项目','exit','','small')}</div></div>`;
+  let html=`<div class="page-head"><div><div class="eyebrow">SYSTEM ADMIN / V1.4.0</div><h1>系统管理</h1><p>管理账号、项目生命周期和平台配置；不代替任何合伙人审批。</p></div><div class="buttons">${button('刷新','refresh','','small')}${button('返回我的项目','exit','','small')}</div></div>`;
   html+=`<nav class="admin-tabs" aria-label="系统管理栏目">${tabs.map(([id,title])=>button(title,'tab',`data-section="${id}" aria-current="${tab===id?'page':'false'}"`,tab===id?'primary':'')).join('')}</nav>`;
   if(!data)return html+'<p>正在读取管理数据…</p>';
   if(tab==='overview'){
@@ -40,9 +40,9 @@ export function createAdminUI({S,e,api,reauth,showForm,showInfo,render,btn,panel
    html+='<div class="alert info">系统管理员身份不等于项目合伙人。停用用户不会删除他的历史意见或从必签名单中移除；在办事项可能因此等待处理。</div>';
   }
   if(tab==='ai'){
-   html+=panel('AI 服务连接配置',`<div class="panel-body"><dl class="kv"><dt>配置来源</dt><dd>${data.source==='database'?'管理员后台配置':'部署环境变量（尚未在后台保存）'}</dd><dt>全站启用</dt><dd>${data.enabled?'已启用':'未启用'}</dd><dt>API Key</dt><dd>${data.keyConfigured?'已保存 · 不回显原值':'未配置'}</dd><dt>接口协议</dt><dd>${e(data.provider)}</dd><dt>API URL</dt><dd class="admin-wrap">${e(data.baseUrl)}</dd><dt>Model</dt><dd class="admin-wrap">${e(data.model||'未配置')}</dd><dt>输入 / 输出费率</dt><dd>${money(data.inputCentsPerMillion)} / ${money(data.outputCentsPerMillion)} 每百万 token</dd><dt>输出上限</dt><dd>${data.outputTokens} token</dd><dt>配置版本</dt><dd>${data.revision}</dd></dl><div class="buttons">${button('配置 Key / Model / URL','ai-edit','','primary')}${button('测试连接（可能计费）','ai-test','','small')}</div><p class="muted">Key只以加密形式保存在服务端，管理员也不能读取已存明文。普通成员没有此管理入口。</p></div>`);
+   html+=panel('AI 服务连接配置',`<div class="panel-body"><dl class="kv"><dt>配置来源</dt><dd>${data.source==='database'?'管理员后台配置':'部署环境变量（尚未在后台保存）'}</dd><dt>全站启用</dt><dd>${data.enabled?'已启用':'未启用'}</dd><dt>API Key</dt><dd>${data.keyConfigured?'已保存 · 不回显原值':'未配置'}</dd><dt>接口协议</dt><dd>${e(data.provider)}</dd><dt>API URL</dt><dd class="admin-wrap">${e(data.baseUrl)}</dd><dt>Model</dt><dd class="admin-wrap">${e(data.model||'未配置')}</dd><dt>配置版本</dt><dd>${data.revision}</dd></dl><div class="buttons">${button('配置 Key / Model / URL','ai-edit','','primary')}${button('测试连接（可能计费）','ai-test','','small')}${button('内置分析提示词','ai-prompts','','small')}${button('补充分析偏好（可选）','ai-guidance','','small')}</div><p class="muted">Key只以加密形式保存在服务端，管理员也不能读取已存明文。普通成员没有此管理入口。</p></div>`);
    if(!data.encryptionReady)html+='<div class="alert bad">部署者还需设置 CONFIG_ENCRYPTION_KEY，网页不能安全地替你生成并保管服务端根密钥。</div>';
-   html+='<div class="alert info">保存不会发起模型调用。修改接收方、Model、费率、Key或启用状态后，项目需重新全员确认AI规则。成员仍能看到自己项目将发送给谁及费用依据，但看不到密钥或编辑控件。</div>';
+   html+='<div class="alert info">保存不会发起模型调用。只需配置URL、Model和Key，无须填写价格或输出长度。提示词已内置，默认简短且通用。修改配置后项目须重新全员确认；用量不代表账单。</div>';
   }
   if(tab==='audit')html+=panel('管理员操作日志',`<div class="panel-body">${data.records.map(x=>`<article class="comment"><div class="comment-meta"><span>#${x.sequence} · ${e(x.actor_name)}</span><time>${shortDate(x.created_at)}</time></div><strong>${e(x.action)}</strong><p class="admin-wrap">对象：${e(x.target_id||'系统')}</p><pre class="admin-json">${e(JSON.stringify(x.details,null,2))}</pre></article>`).join('')||'<p>暂无管理操作记录。</p>'}</div>`)+pager()+'<p class="muted">日志为应用层只追加记录，不是第三方不可篡改存证。用户密码、API Key不会写入日志。</p>';
   html+=OPS.page(tab,data);
@@ -114,13 +114,19 @@ export function createAdminUI({S,e,api,reauth,showForm,showInfo,render,btn,panel
     {name:'model',label:'Model（真实模型ID）',value:c.model,full:true,maxLength:120},
     {name:'key',label:c.keyConfigured?'替换 API Key（留空保留原值）':'API Key',type:'password',required:false,full:true,maxLength:8192,autocomplete:'off'},
     {name:'clearKey',label:'清除已保存Key（须同时关闭AI）',type:'checkbox',full:true},
-    {name:'inputRate',label:'输入费率：元 / 百万token',type:'money',value:amountInput(c.inputCentsPerMillion)},
-    {name:'outputRate',label:'输出费率：元 / 百万token',type:'money',value:amountInput(c.outputCentsPerMillion)},
-    {name:'outputTokens',label:'输出上限：1024–8192 token',type:'number',min:1024,max:8192,step:1,value:c.outputTokens},
-    {name:'structured',label:'发送结构化输出参数（本地报告校验始终开启）',type:'checkbox',value:c.structured,full:true},
     {name:'confirmExternalHost',label:'确认第三方接收方',type:'checkbox',full:true,checkboxText:'如使用第三方网关，我已核对域名与数据处理方式，同意将其加入本应用允许名单'},fieldReason
-   ],async a=>{await save('/ai-settings',{...a,enabled:!!a.enabled,structured:!!a.structured,clearKey:!!a.clearKey,confirmExternalHost:!!a.confirmExternalHost,inputCentsPerMillion:toCents(a.inputRate),outputCentsPerMillion:toCents(a.outputRate),outputTokens:Number(a.outputTokens),expectedRevision:c.revision});await refresh();toast('配置已加密保存；项目需重新确认AI规则，未调用模型');},
-   {intro:'不回显已有Key。保存后覆盖原环境变量AI配置；Key/配置变更使旧项目授权失效。费率请按服务商真实价格填写。',submit:'加密保存配置'});return;
+   ],async a=>{await save('/ai-settings',{...a,enabled:!!a.enabled,clearKey:!!a.clearKey,confirmExternalHost:!!a.confirmExternalHost,expectedRevision:c.revision});await refresh();toast('配置已加密保存；项目需重新确认AI规则，未调用模型');},
+   {intro:'不回显已有Key。保存后覆盖原环境变量AI配置；Key/配置变更使旧项目授权失效。不填写token价格或输出字数。实际费用以服务商账单为准。',submit:'加密保存配置'});return;
+  }
+  if(name==='admin-ai-prompts'){
+   const c=await api(base+'/ai-settings'),p=c.prompts;
+   showInfo('内置通用分析提示词',`<p>版本：${e(p.version)}。不需要自己写提示词，核心规则不能被补充偏好覆盖。</p><details open><summary>共同核心规则</summary><pre class="admin-json">${e(p.core)}</pre></details>${Object.entries(p.tasks).map(([k,t])=>`<details><summary>${e({project:'项目合理性',purchase:'支出／采购',stage:'阶段复盘'}[k])}</summary><p class="long-text">${e(t)}</p></details>`).join('')}`);return;
+  }
+  if(name==='admin-ai-guidance'){
+   const c=await api(base+'/ai-settings');
+   showForm('补充分析偏好（可留空）',[{name:'analysisGuidance',label:'例如：优先关注制作时间和返工，不必假设有客户或库存',type:'textarea',full:true,required:false,maxLength:2000,value:c.analysisGuidance||''},fieldReason],async a=>{
+    await save('/ai-settings',{enabled:c.enabled,provider:c.provider,baseUrl:c.baseUrl,model:c.model,analysisGuidance:a.analysisGuidance,reason:a.reason,expectedRevision:c.revision});await refresh();toast('补充偏好已保存；原提示词核心规则不变，项目需重新确认');
+   },{intro:'默认内置通用提示词已可直接使用。不要填写密钥或隐私；补充内容只能影响关注重点，不能赋予AI审批权。'});return;
   }
   if(name==='admin-ai-test'){
    const c=await api(base+'/ai-settings');

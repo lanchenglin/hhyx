@@ -69,18 +69,18 @@ test('AI项目分析、权限、预算、留痕和故障防护', async t=>{
   await f.action(f.all[1],'ai.suspend',{});assert.equal((await f.owner.ok(f.base+'/ai',undefined,'GET')).consented,false);assert.equal((await load(f.rt.env,f.pid)).state.status,'active');
   assert.equal(f.calls,0);
  }));
- await t.test('月调用和费用限额拒绝新增发送，多个请求不超额预占',()=>use(async f=>{
+ await t.test('月调用限额拒绝新增发送，多个请求不超额预占',()=>use(async f=>{
   await f.approvePolicy({monthlyCallLimit:1});const pre=await f.preview();const payload={kind:'project',previewHash:pre.hash,confirmSend:true};
   const results=await Promise.all([1,2,3].map(()=>f.owner.request(f.base+'/ai/runs',{method:'POST',data:payload})));assert.ok(results.some(x=>x.status<300));await f.rt.settle();assert.equal(f.calls,1);
   await f.action(f.owner,'ai.materials',{business:'产生新快照'});const pr=await f.preview();const r=await f.owner.request(f.base+'/ai/runs',{method:'POST',data:{...payload,previewHash:pr.hash}});assert.equal(r.status,429);assert.equal(f.calls,1);
  }));
- await t.test('费用不足时不调用模型',()=>use(async f=>{
-  await f.approvePolicy({monthlyBudgetCents:1});const pr=await f.preview();assert.ok(pr.reserveCents>1);
-  const r=await f.owner.request(f.base+'/ai/runs',{method:'POST',data:{kind:'project',previewHash:pr.hash,confirmSend:true}});assert.equal(r.status,429);assert.equal(f.calls,0);
+ await t.test('旧金额配置不再阻止调用；不捏造费用估算',()=>use(async f=>{
+  await f.approvePolicy({monthlyBudgetCents:1});const pr=await f.preview();assert.equal(pr.reserveCents,undefined);
+  const r=await f.owner.request(f.base+'/ai/runs',{method:'POST',data:{kind:'project',previewHash:pr.hash,confirmSend:true}});assert.ok(r.status<300);await f.rt.settle();assert.equal(f.calls,1);
  }));
- await t.test('超时状态不伪装为成功、不自动重试，费用仍预占；人工重试须确认',()=>use(async f=>{
+ await t.test('超时状态不伪装为成功、不自动重试，已发生尝试仍计数；人工重试须确认',()=>use(async f=>{
   await f.approvePolicy();f.rt.env.AI_FETCH=async()=>{throw new DOMException('timeout','AbortError');};
-  const r=await f.run(),report=await f.read(r.id);assert.equal(report.status,'uncertain');assert.equal(report.report,null);assert.ok(report.accounting.chargeCents>0);
+  const r=await f.run(),report=await f.read(r.id);assert.equal(report.status,'uncertain');assert.equal(report.report,null);assert.equal(report.accounting.sentCalls,1);
   const pre=await f.preview();const denied=await f.owner.request(f.base+'/ai/runs',{method:'POST',data:{kind:'project',previewHash:pre.hash,confirmSend:true}});assert.equal(denied.status,409);
   const r2=await f.run('project','',{retry:true,acceptPossibleCharge:true});await f.read(r2.id);assert.notEqual(r.id,r2.id);
   assert.equal(aiUsage((await load(f.rt.env,f.pid)).state).calls,2);
@@ -90,7 +90,7 @@ test('AI项目分析、权限、预算、留痕和故障防护', async t=>{
   f.rt.env.AI_FETCH=async()=>Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(bad)}}],usage:{prompt_tokens:100,completion_tokens:100}});
   const r=await f.run(),v=await f.read(r.id);assert.equal(v.status,'failed');assert.equal(v.report,null);assert.equal(v.errorCode,'INVALID_REPORT');assert.ok(v.accounting.usage);
  }));
- await t.test('没有usage的成功报告仍保留费用预占并标明未知',()=>use(async f=>{
+ await t.test('没有usage的成功报告标明用量未知，不假装免费',()=>use(async f=>{
   await f.approvePolicy();f.rt.env.AI_FETCH=async()=>Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(validReport())}}]});
   const r=await f.run(),v=await f.read(r.id);assert.equal(v.status,'completed');assert.equal(v.accounting.usage,null);assert.equal(v.accounting.chargeCents,v.accounting.reserveCents);
   assert.equal((await f.owner.ok(f.base+'/ai',undefined,'GET')).usage.unknownUsageCount,1);
@@ -134,9 +134,9 @@ test('AI纯函数防护及确定性测算',async t=>{
   assert.equal(scenarioMath(large).collectedCents,Number(BigInt(large.units)*BigInt(large.priceCents)*7777n/10000n));
   assert.throws(()=>scenarioMath({...large,units:100000000,unitCostCents:90071992,fixedCostCents:100000000}),/精度/);
  });
- await t.test('不允许未经服务端许可的端点、重定向目标和缺失价格',()=>{
+ await t.test('拒绝未经许可的端点；缺失价格不影响配置',()=>{
   for(const baseUrl of ['http://localhost:123','https://127.0.0.1','https://user:pass@api.openai.com/v1','https://api.openai.com/v1?token=secret','https://evil.example/v1'])assert.equal(publicEngine({...envConfig,AI_BASE_URL:baseUrl}).configured,false);
-  assert.equal(publicEngine({...envConfig,AI_INPUT_CENTS_PER_MILLION:''}).configured,false);
+  assert.equal(publicEngine({...envConfig,AI_INPUT_CENTS_PER_MILLION:''}).configured,true);
  });
  await t.test('OpenAI兼容与Anthropic请求协议各自正确，且没有工具权限',()=>{
   const open=publicEngine(envConfig),a=requestSpec(open,{sources:[]},'demo');assert.ok(a.url.endsWith('/chat/completions'));assert.equal(a.body.response_format.type,'json_schema');assert.equal(a.body.tools,undefined);
@@ -176,9 +176,9 @@ test('AI调度恢复与授权变动回归',async t=>{
   await f.approvePolicy();const pre=await f.preview();const job=await requestAnalysis(f.rt.env,f.pid,f.owner.user,{kind:'project',previewHash:pre.hash,confirmSend:true},crypto.randomUUID());
   await Promise.all([runAiJob(f.rt.env,job.id),runAiJob(f.rt.env,job.id)]);assert.equal(f.calls,1);assert.equal((await f.read(job.id)).status,'completed');
  }));
- await t.test('进程中断的租约由调度器收敛为不确定，不重复发送或清零费用',()=>use(async f=>{
+ await t.test('进程中断的租约由调度器收敛为不确定，不重复发送或清零已发生尝试',()=>use(async f=>{
   await f.approvePolicy();const pre=await f.preview();const job=await requestAnalysis(f.rt.env,f.pid,f.owner.user,{kind:'project',previewHash:pre.hash,confirmSend:true},crypto.randomUUID());
   f.rt.db.prepare("UPDATE ai_jobs SET status='running',lease_until=0 WHERE id=?").run(job.id);
-  await processAiJobs(f.rt.env);await processAiJobs(f.rt.env);const r=await f.read(job.id);assert.equal(r.status,'uncertain');assert.equal(r.errorCode,'INTERRUPTED');assert.ok(r.accounting.chargeCents>0);assert.equal(f.calls,0);
+  await processAiJobs(f.rt.env);await processAiJobs(f.rt.env);const r=await f.read(job.id);assert.equal(r.status,'uncertain');assert.equal(r.errorCode,'INTERRUPTED');assert.equal(r.accounting.sentCalls,1);assert.equal(f.calls,0);
  }));
 });

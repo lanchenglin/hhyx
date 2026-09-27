@@ -1,0 +1,5 @@
+
+> coop-plan@1.4.0 check
+> node scripts/check.mjs
+
+语法检查通过：50 个 JavaScript 文件；Workers D1/R2 绑定声明完整。

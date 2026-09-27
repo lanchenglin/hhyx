@@ -55,3 +55,11 @@ https://help.aliyun.com/en/cmn/developer-reference/signature-mechanism
 - 阿里云 SendSms：https://help.aliyun.com/zh/sms/developer-reference/api-dysmsapi-2017-05-25-sendsms
 
 这些文档是实现依据，不是对本项目真实云端、服务商账户或生产恢复验收的证明。
+
+
+## v1.4响应结束原因与受控补齐
+
+- OpenAI Chat API（completion finish_reason / max_completion_tokens）：https://developers.openai.com/api/reference/resources/chat
+- Anthropic stop reasons（end_turn / max_tokens）：https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons
+
+此版本按接口返回的明确结束原因决定是否补齐，不从自然语言猜测成功。接口文档不是当前账号/网关兼容性测试，模型与真实延迟仍需部署者验证。

@@ -1,9 +1,10 @@
 import {assert, AppError, encrypt, decrypt} from './util.js';
 import {one} from './store.js';
 import {publicEngine} from './ai-policy.js';
+import {promptCatalog} from './ai-prompts.js';
 
 export const AI_CONFIG_KEY='admin_ai_config';
-export const AI_ENV_MAP={provider:'AI_PROVIDER',baseUrl:'AI_BASE_URL',model:'AI_MODEL',inputCentsPerMillion:'AI_INPUT_CENTS_PER_MILLION',outputCentsPerMillion:'AI_OUTPUT_CENTS_PER_MILLION',outputTokens:'AI_OUTPUT_TOKENS',structured:'AI_STRUCTURED_OUTPUT'};
+export const AI_ENV_MAP={provider:'AI_PROVIDER',baseUrl:'AI_BASE_URL',model:'AI_MODEL',analysisGuidance:'AI_ANALYSIS_GUIDANCE'};
 export async function readAiConfig(env) {
  const r=await one(env,'SELECT value FROM settings WHERE key=?',AI_CONFIG_KEY);
  if(!r)return null;
@@ -14,6 +15,8 @@ export function envWithConfig(env,c,{validation=false}={}) {
  if(!c)return env;
  const result={...env,AI_CONFIGURATION_REVISION:String(c.revision),AI_API_KEY:'',AI_ALLOWED_HOSTS:(c.allowedHosts||[]).join(',')};
  for(const [k,v] of Object.entries(AI_ENV_MAP))result[v]=String(c[k]??'');
+ // Advanced protocol settings are deployment-only, not fees or form requirements.
+ if(c.structured!=null&&env.AI_STRUCTURED_OUTPUT==null)result.AI_STRUCTURED_OUTPUT=String(c.structured);
  if(validation)result.AI_API_KEY='configuration-validation-only';
  else if(c.enabled&&c.keyEncrypted){
   try {result.AI_API_KEY=decrypt(c.keyEncrypted,env.CONFIG_ENCRYPTION_KEY);}
@@ -25,20 +28,20 @@ export async function resolveAiEnv(env){return envWithConfig(env,await readAiCon
 export async function aiSettingsView(env) {
  const c=await readAiConfig(env);
  if(c)return {source:'database',revision:c.revision,enabled:c.enabled,keyConfigured:!!c.keyEncrypted,
-  ...Object.fromEntries(Object.keys(AI_ENV_MAP).map(k=>[k,c[k]])),allowedHosts:c.allowedHosts,updatedAt:c.updatedAt,
+  ...Object.fromEntries(Object.keys(AI_ENV_MAP).map(k=>[k,c[k]||''])),prompts:promptCatalog(),allowedHosts:c.allowedHosts,updatedAt:c.updatedAt,
   engine:publicEngine(envWithConfig(env,c,{validation:true})),encryptionReady:!!env.CONFIG_ENCRYPTION_KEY};
  const engine=publicEngine(env);
  return {source:'environment',revision:0,enabled:engine.configured,keyConfigured:!!env.AI_API_KEY,provider:env.AI_PROVIDER||'openai_compatible',
-  baseUrl:env.AI_BASE_URL||'https://api.openai.com/v1',model:env.AI_MODEL||'',inputCentsPerMillion:Number(env.AI_INPUT_CENTS_PER_MILLION)||0,
-  outputCentsPerMillion:Number(env.AI_OUTPUT_CENTS_PER_MILLION)||0,outputTokens:Number(env.AI_OUTPUT_TOKENS)||4096,
-  structured:env.AI_STRUCTURED_OUTPUT!=='false',allowedHosts:[],updatedAt:null,engine,encryptionReady:!!env.CONFIG_ENCRYPTION_KEY};
+  baseUrl:env.AI_BASE_URL||'https://api.openai.com/v1',model:env.AI_MODEL||'',
+  analysisGuidance:env.AI_ANALYSIS_GUIDANCE||'',prompts:promptCatalog(),allowedHosts:[],updatedAt:null,engine,encryptionReady:!!env.CONFIG_ENCRYPTION_KEY};
 }
 export function validateAiSettings(env,a,previous,at) {
- assert(typeof a.enabled==='boolean'&&typeof a.structured==='boolean','请明确AI启用状态和结构化输出设置');
+ assert(typeof a.enabled==='boolean','请明确AI启用状态');
  assert(a.expectedRevision===(previous?.revision||0),'AI配置已被其他管理员更新，请刷新后重试',409,'CONFIG_CONFLICT');
- const c={revision:(previous?.revision||0)+1,enabled:a.enabled,structured:a.structured,updatedAt:at};
+ const c={revision:(previous?.revision||0)+1,enabled:a.enabled,structured:previous?.structured??(env.AI_STRUCTURED_OUTPUT!=='false'),updatedAt:at};
  for(const k of ['provider','baseUrl','model']){assert(typeof a[k]==='string',`${k}格式不正确`);c[k]=a[k].trim();assert(c[k].length<=({provider:40,baseUrl:500,model:120}[k]),`${k}内容过长`);}
- for(const k of ['inputCentsPerMillion','outputCentsPerMillion','outputTokens']){assert(Number.isSafeInteger(a[k]),`${k}须为整数`);c[k]=a[k];}
+ c.analysisGuidance=Object.hasOwn(a,'analysisGuidance')?a.analysisGuidance:(previous?.analysisGuidance||'');
+ assert(typeof c.analysisGuidance==='string'&&c.analysisGuidance.length<=2000,'补充分析偏好最多2000字符');
  let host;try{host=new URL(c.baseUrl).hostname;}catch{throw new AppError('API URL格式不正确');}
  const trusted=['api.openai.com','api.anthropic.com',...String(env.AI_ALLOWED_HOSTS||'').split(',')].includes(host)||previous?.allowedHosts?.includes(host);
  assert(trusted||a.confirmExternalHost===true,'第三方API接收方需管理员明确确认；不要填写不可信地址');

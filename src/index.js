@@ -11,7 +11,7 @@ import { aiRoute, autoAnalysis, processAiJobs } from './ai.js';
 import { validateWecom, kick, scheduled, deliverOne } from './notifications.js';
 
 const SENSITIVE = new Set(['exit.payment','proposal.vote','purchase.vote','purchase.order','purchase.pay','ledger.verify','ledger.reverse','project.pause','settlement.pay','ai.suspend']);
-const INTERNAL = new Set(['admin.lifecycle','admin.member.role','member.join','attachment.add','channel.update','invite.create','ai.run.request','ai.run.finish','ai.review']);
+const INTERNAL = new Set(['admin.lifecycle','admin.member.role','member.join','attachment.add','channel.update','invite.create','ai.run.request','ai.run.progress','ai.run.finish','ai.review']);
 const MIME = new Set(['application/pdf','image/png','image/jpeg','image/webp','text/plain','text/csv','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
 const MAX_FILE=10*1024*1024;
 const keyOf=req=>req.headers.get('x-idempotency-key');

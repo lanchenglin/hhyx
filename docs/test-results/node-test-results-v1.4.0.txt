@@ -1,0 +1,1001 @@
+TAP version 13
+# (node:3598) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: 管理员初始化、旧库升级和本地重启
+    # Subtest: 迁移只提升原始初始化账号，保留密码与普通账号
+    ok 1 - 迁移只提升原始初始化账号，保留密码与普通账号
+      ---
+      duration_ms: 494.284655
+      type: 'test'
+      ...
+    # Subtest: 显式启用初始admin，首登强制改密且不覆写已设置密码
+    ok 2 - 显式启用初始admin，首登强制改密且不覆写已设置密码
+      ---
+      duration_ms: 3388.95411
+      type: 'test'
+      ...
+    # Subtest: 没有Secret和明确启用时不生成公开默认管理员
+    ok 3 - 没有Secret和明确启用时不生成公开默认管理员
+      ---
+      duration_ms: 19.288099
+      type: 'test'
+      ...
+    # Subtest: 本地迁移只执行一次，重启不重置数据
+    ok 4 - 本地迁移只执行一次，重启不重置数据
+      ---
+      duration_ms: 27.364942
+      type: 'test'
+      ...
+    1..4
+ok 1 - 管理员初始化、旧库升级和本地重启
+  ---
+  duration_ms: 3933.708576
+  type: 'test'
+  ...
+# Subtest: 管理员用户管理：独立系统权限，不代替项目签名
+    # Subtest: 普通用户不能访问后台接口，用户名admin可登录
+    ok 1 - 普通用户不能访问后台接口，用户名admin可登录
+      ---
+      duration_ms: 460.375308
+      type: 'test'
+      ...
+    # Subtest: 管理员也不能绕过来源、CSRF或允许列表
+    ok 2 - 管理员也不能绕过来源、CSRF或允许列表
+      ---
+      duration_ms: 3.372466
+      type: 'test'
+      ...
+    # Subtest: 创建用户幂等、强制改密，不存临时密码明文
+    ok 3 - 创建用户幂等、强制改密，不存临时密码明文
+      ---
+      duration_ms: 1497.997948
+      type: 'test'
+      ...
+    # Subtest: 不能停用自己或移除最后管理员，数据库亦有保护
+    ok 4 - 不能停用自己或移除最后管理员，数据库亦有保护
+      ---
+      duration_ms: 7.844773
+      type: 'test'
+      ...
+    # Subtest: 停用用户立即撤销会话，不移除采购签名和项目成员
+    ok 5 - 停用用户立即撤销会话，不移除采购签名和项目成员
+      ---
+      duration_ms: 1469.671634
+      type: 'test'
+      ...
+    # Subtest: 可限制新建项目，仍保留原项目访问；旧版本更新被拒
+    ok 6 - 可限制新建项目，仍保留原项目访问；旧版本更新被拒
+      ---
+      duration_ms: 973.328578
+      type: 'test'
+      ...
+    # Subtest: 重置密码使旧密码失效，新密码强制本人更改，其他成员不受影响
+    ok 7 - 重置密码使旧密码失效，新密码强制本人更改，其他成员不受影响
+      ---
+      duration_ms: 1650.19529
+      type: 'test'
+      ...
+    # Subtest: 审计行不允许更新或删除，没有明文密码返回
+    ok 8 - 审计行不允许更新或删除，没有明文密码返回
+      ---
+      duration_ms: 2.404857
+      type: 'test'
+      ...
+    1..8
+ok 2 - 管理员用户管理：独立系统权限，不代替项目签名
+  ---
+  duration_ms: 9271.973707
+  type: 'test'
+  ...
+# Subtest: 项目生命周期与项目角色会签
+    # Subtest: 归档要求明确名称、影响确认和当前版本
+    ok 1 - 归档要求明确名称、影响确认和当前版本
+      ---
+      duration_ms: 8.090168
+      type: 'test'
+      ...
+    # Subtest: 归档只读、能导出且没有删除采购账目，后台也不能代签
+    ok 2 - 归档只读、能导出且没有删除采购账目，后台也不能代签
+      ---
+      duration_ms: 13.504342
+      type: 'test'
+      ...
+    # Subtest: 归档停止外发通知，即使旧任务已排队也不再发送
+    ok 3 - 归档停止外发通知，即使旧任务已排队也不再发送
+      ---
+      duration_ms: 0.494306
+      type: 'test'
+      ...
+    # Subtest: 回收站不向成员列出，恢复先到归档，历史审计链完整
+    ok 4 - 回收站不向成员列出，恢复先到归档，历史审计链完整
+      ---
+      duration_ms: 29.577395
+      type: 'test'
+      ...
+    # Subtest: 只读审阅跨项目由管理员专用接口授权，普通业务接口不越权
+    ok 5 - 只读审阅跨项目由管理员专用接口授权，普通业务接口不越权
+      ---
+      duration_ms: 3.304141
+      type: 'test'
+      ...
+    # Subtest: 活跃项目角色修改必须原合伙人全员确认，反对不被移除
+    ok 6 - 活跃项目角色修改必须原合伙人全员确认，反对不被移除
+      ---
+      duration_ms: 54.005617
+      type: 'test'
+      ...
+    # Subtest: 不能直接降权项目创建人或通过DELETE物理清库
+    ok 7 - 不能直接降权项目创建人或通过DELETE物理清库
+      ---
+      duration_ms: 5.650392
+      type: 'test'
+      ...
+    1..7
+ok 3 - 项目生命周期与项目角色会签
+  ---
+  duration_ms: 3175.042466
+  type: 'test'
+  ...
+# Subtest: 管理员AI配置：加密、透明授权、费用确认及过期任务
+    # Subtest: URL和Key输入校验，不能使用本地IP或最终接口地址
+    ok 1 - URL和Key输入校验，不能使用本地IP或最终接口地址
+      ---
+      duration_ms: 10.328073
+      type: 'test'
+      ...
+    # Subtest: 保存Key加密，不向任何读接口和日志回显；保存不调用模型
+    ok 2 - 保存Key加密，不向任何读接口和日志回显；保存不调用模型
+      ---
+      duration_ms: 5.232231
+      type: 'test'
+      ...
+    # Subtest: 留空保留Key；并发旧配置拒绝；清除Key须先关闭
+    ok 3 - 留空保留Key；并发旧配置拒绝；清除Key须先关闭
+      ---
+      duration_ms: 3.874668
+      type: 'test'
+      ...
+    # Subtest: 测试连接须确认费用，只发送通用文字且不自动重试
+    ok 4 - 测试连接须确认费用，只发送通用文字且不自动重试
+      ---
+      duration_ms: 4.400731
+      type: 'test'
+      ...
+    # Subtest: 改Model/Key后原项目授权失效，不会管理员配置即代签
+    ok 5 - 改Model/Key后原项目授权失效，不会管理员配置即代签
+      ---
+      duration_ms: 17.606881
+      type: 'test'
+      ...
+    # Subtest: 项目归档后排队AI请求被取消，实际调用为零
+    ok 6 - 项目归档后排队AI请求被取消，实际调用为零
+      ---
+      duration_ms: 27.07388
+      type: 'test'
+      ...
+    # Subtest: 关闭且清除Key后不回退到环境变量旧Key
+    ok 7 - 关闭且清除Key后不回退到环境变量旧Key
+      ---
+      duration_ms: 2.029984
+      type: 'test'
+      ...
+    1..7
+ok 4 - 管理员AI配置：加密、透明授权、费用确认及过期任务
+  ---
+  duration_ms: 1995.690993
+  type: 'test'
+  ...
+# Subtest: 后台只读附件路径隔离、账号安全提醒与静态资源
+ok 5 - 后台只读附件路径隔离、账号安全提醒与静态资源
+  ---
+  duration_ms: 2030.687117
+  type: 'test'
+  ...
+# (node:3640) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AI项目分析、权限、预算、留痕和故障防护
+    # Subtest: 默认不调用模型；必须全员确认且筹备期也可授权
+    ok 1 - 默认不调用模型；必须全员确认且筹备期也可授权
+      ---
+      duration_ms: 2966.807014
+      type: 'test'
+      ...
+    # Subtest: 成功报告有冻结依据/版本/费用；不改采购或计划，审计链可校验
+    ok 2 - 成功报告有冻结依据/版本/费用；不改采购或计划，审计链可校验
+      ---
+      duration_ms: 2829.429318
+      type: 'test'
+      ...
+    # Subtest: 相同输入复用报告；重复幂等请求不重复付费
+    ok 3 - 相同输入复用报告；重复幂等请求不重复付费
+      ---
+      duration_ms: 2964.375333
+      type: 'test'
+      ...
+    # Subtest: 过期预览不能发送；资料修订使旧报告过期且保留版本
+    ok 4 - 过期预览不能发送；资料修订使旧报告过期且保留版本
+      ---
+      duration_ms: 2766.761578
+      type: 'test'
+      ...
+    # Subtest: 采购超过阶段预算由程序指出；AI不能放行，改版本后旧报告过期
+    ok 5 - 采购超过阶段预算由程序指出；AI不能放行，改版本后旧报告过期
+      ---
+      duration_ms: 2761.852376
+      type: 'test'
+      ...
+    # Subtest: 跨项目报告、预览、导出和建议转任务均不可访问
+    ok 6 - 跨项目报告、预览、导出和建议转任务均不可访问
+      ---
+      duration_ms: 2848.60725
+      type: 'test'
+      ...
+    # Subtest: 数据白名单与脱敏不泄露结构化账号、凭证、Webhook或密钥
+    ok 7 - 数据白名单与脱敏不泄露结构化账号、凭证、Webhook或密钥
+      ---
+      duration_ms: 2857.125047
+      type: 'test'
+      ...
+    # Subtest: 模型配置或成员变化使原授权失效；暂停不影响原业务
+    ok 8 - 模型配置或成员变化使原授权失效；暂停不影响原业务
+      ---
+      duration_ms: 3041.675014
+      type: 'test'
+      ...
+    # Subtest: 月调用限额拒绝新增发送，多个请求不超额预占
+    ok 9 - 月调用限额拒绝新增发送，多个请求不超额预占
+      ---
+      duration_ms: 2832.726486
+      type: 'test'
+      ...
+    # Subtest: 旧金额配置不再阻止调用；不捏造费用估算
+    ok 10 - 旧金额配置不再阻止调用；不捏造费用估算
+      ---
+      duration_ms: 2710.156568
+      type: 'test'
+      ...
+    # Subtest: 超时状态不伪装为成功、不自动重试，已发生尝试仍计数；人工重试须确认
+    ok 11 - 超时状态不伪装为成功、不自动重试，已发生尝试仍计数；人工重试须确认
+      ---
+      duration_ms: 2938.419198
+      type: 'test'
+      ...
+    # Subtest: 伪造来源、截断或非法字段的模型输出不作为有效报告
+    ok 12 - 伪造来源、截断或非法字段的模型输出不作为有效报告
+      ---
+      duration_ms: 2893.460129
+      type: 'test'
+      ...
+    # Subtest: 没有usage的成功报告标明用量未知，不假装免费
+    ok 13 - 没有usage的成功报告标明用量未知，不假装免费
+      ---
+      duration_ms: 3296.030742
+      type: 'test'
+      ...
+    # Subtest: 任务建议必须人工确认、指定不同验收人；风险处置留痕且不能重复建任务
+    ok 14 - 任务建议必须人工确认、指定不同验收人；风险处置留痕且不能重复建任务
+      ---
+      duration_ms: 3637.369779
+      type: 'test'
+      ...
+    # Subtest: 普通API不能伪造报告或代写系统审核、AI来源和授权
+    ok 15 - 普通API不能伪造报告或代写系统审核、AI来源和授权
+      ---
+      duration_ms: 3537.44496
+      type: 'test'
+      ...
+    # Subtest: 自动采购分析受已批准规则控制；报告不改变三人会签结果
+    ok 16 - 自动采购分析受已批准规则控制；报告不改变三人会签结果
+      ---
+      duration_ms: 3415.295471
+      type: 'test'
+      ...
+    # Subtest: 阶段复盘有原计划和当前阶段，支持独立生成
+    ok 17 - 阶段复盘有原计划和当前阶段，支持独立生成
+      ---
+      duration_ms: 3528.387674
+      type: 'test'
+      ...
+    # Subtest: 报告正文及分析输入在数据库中不可直接更新或删除
+    ok 18 - 报告正文及分析输入在数据库中不可直接更新或删除
+      ---
+      duration_ms: 3458.206858
+      type: 'test'
+      ...
+    1..18
+ok 6 - AI项目分析、权限、预算、留痕和故障防护
+  ---
+  duration_ms: 55291.535646
+  type: 'test'
+  ...
+# Subtest: AI纯函数防护及确定性测算
+    # Subtest: 场景测算使用整数分，不等同真实利润或回款
+    ok 1 - 场景测算使用整数分，不等同真实利润或回款
+      ---
+      duration_ms: 1.00045
+      type: 'test'
+      ...
+    # Subtest: 拒绝未经许可的端点；缺失价格不影响配置
+    ok 2 - 拒绝未经许可的端点；缺失价格不影响配置
+      ---
+      duration_ms: 0.512613
+      type: 'test'
+      ...
+    # Subtest: OpenAI兼容与Anthropic请求协议各自正确，且没有工具权限
+    ok 3 - OpenAI兼容与Anthropic请求协议各自正确，且没有工具权限
+      ---
+      duration_ms: 0.372292
+      type: 'test'
+      ...
+    # Subtest: 报告字段、来源原文与成功率不允许伪造
+    ok 4 - 报告字段、来源原文与成功率不允许伪造
+      ---
+      duration_ms: 0.476973
+      type: 'test'
+      ...
+    1..4
+ok 7 - AI纯函数防护及确定性测算
+  ---
+  duration_ms: 3.022143
+  type: 'test'
+  ...
+# Subtest: AI调度恢复与授权变动回归
+    # Subtest: 移除合伙人后原外发授权失效，不沿用减少人数的旧许可
+    ok 1 - 移除合伙人后原外发授权失效，不沿用减少人数的旧许可
+      ---
+      duration_ms: 3550.364085
+      type: 'test'
+      ...
+    # Subtest: HTTP错误不泄漏服务商原始报错或密钥，且不自动重试
+    ok 2 - HTTP错误不泄漏服务商原始报错或密钥，且不自动重试
+      ---
+      duration_ms: 3668.334647
+      type: 'test'
+      ...
+    # Subtest: 阶段验收自动分析仅在全员通过后触发一次
+    ok 3 - 阶段验收自动分析仅在全员通过后触发一次
+      ---
+      duration_ms: 3483.822619
+      type: 'test'
+      ...
+    # Subtest: 已排队请求在发送前重新检查撤销授权，不调用模型并释放预占
+    ok 4 - 已排队请求在发送前重新检查撤销授权，不调用模型并释放预占
+      ---
+      duration_ms: 3382.588625
+      type: 'test'
+      ...
+    # Subtest: 两个执行器并发处理同一任务，只能领取并发送一次
+    ok 5 - 两个执行器并发处理同一任务，只能领取并发送一次
+      ---
+      duration_ms: 3175.075926
+      type: 'test'
+      ...
+    # Subtest: 进程中断的租约由调度器收敛为不确定，不重复发送或清零已发生尝试
+    ok 6 - 进程中断的租约由调度器收敛为不确定，不重复发送或清零已发生尝试
+      ---
+      duration_ms: 2765.664062
+      type: 'test'
+      ...
+    1..6
+ok 8 - AI调度恢复与授权变动回归
+  ---
+  duration_ms: 20027.364815
+  type: 'test'
+  ...
+# (node:3943) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: 成员变更、阶段闸门、利润结算和更正
+    # Subtest: 未验收前一阶段不能直接开放后一阶段
+    ok 1 - 未验收前一阶段不能直接开放后一阶段
+      ---
+      duration_ms: 17.075353
+      type: 'test'
+      ...
+    # Subtest: 阶段完成须全员验收，之后才能开放下一阶段
+    ok 2 - 阶段完成须全员验收，之后才能开放下一阶段
+      ---
+      duration_ms: 56.466794
+      type: 'test'
+      ...
+    # Subtest: 借款与出资不计入利润，待回款收入和销售成本分开确认
+    ok 3 - 借款与出资不计入利润，待回款收入和销售成本分开确认
+      ---
+      duration_ms: 27.587298
+      type: 'test'
+      ...
+    # Subtest: 结算会签期间账目变化，旧结算不能直接生效
+    ok 4 - 结算会签期间账目变化，旧结算不能直接生效
+      ---
+      duration_ms: 40.315798
+      type: 'test'
+      ...
+    # Subtest: 分配采用整数分且尾差守恒；全员确认后才可登记支付
+    ok 5 - 分配采用整数分且尾差守恒；全员确认后才可登记支付
+      ---
+      duration_ms: 18.42899
+      type: 'test'
+      ...
+    # Subtest: 分红付款不能超过批准给该成员的金额
+    ok 6 - 分红付款不能超过批准给该成员的金额
+      ---
+      duration_ms: 28.875071
+      type: 'test'
+      ...
+    # Subtest: 账目冲销追加记录，不删除原记录，且不能重复冲销
+    ok 7 - 账目冲销追加记录，不删除原记录，且不能重复冲销
+      ---
+      duration_ms: 17.567104
+      type: 'test'
+      ...
+    # Subtest: 对账必须核对全部账目且余额一致
+    ok 8 - 对账必须核对全部账目且余额一致
+      ---
+      duration_ms: 24.565878
+      type: 'test'
+      ...
+    # Subtest: 增加合伙人需要旧全体同意；已有未执行采购重新会签
+    ok 9 - 增加合伙人需要旧全体同意；已有未执行采购重新会签
+      ---
+      duration_ms: 1001.802198
+      type: 'test'
+      ...
+    # Subtest: 移除成员必须包括本人在内的全体同意；最后一票可由退出者提交
+    ok 10 - 移除成员必须包括本人在内的全体同意；最后一票可由退出者提交
+      ---
+      duration_ms: 27.632917
+      type: 'test'
+      ...
+    1..10
+ok 9 - 成员变更、阶段闸门、利润结算和更正
+  ---
+  duration_ms: 4426.154949
+  type: 'test'
+  ...
+# Subtest: 第31名合伙人在进入审批前即被拒绝，保留后续会签能力
+ok 10 - 第31名合伙人在进入审批前即被拒绝，保留后续会签能力
+  ---
+  duration_ms: 2796.805836
+  type: 'test'
+  ...
+# (node:3954) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: 简化连接配置无需价格和输出参数；密钥仍只在管理员端加密管理
+ok 11 - 简化连接配置无需价格和输出参数；密钥仍只在管理员端加密管理
+  ---
+  duration_ms: 2919.648586
+  type: 'test'
+  ...
+# Subtest: 通用资料：没有客户、商品、订单不产生固定缺失清单；一段话可分析
+ok 12 - 通用资料：没有客户、商品、订单不产生固定缺失清单；一段话可分析
+  ---
+  duration_ms: 2860.003586
+  type: 'test'
+  ...
+# Subtest: 轻量更新保留旧资料及可选测算，不覆盖原共同计划
+ok 13 - 轻量更新保留旧资料及可选测算，不覆盖原共同计划
+  ---
+  duration_ms: 2765.918242
+  type: 'test'
+  ...
+# Subtest: 金额分级：499.99及500元不自动分析，500.01元触发；生活用途不豁免大额
+ok 14 - 金额分级：499.99及500元不自动分析，500.01元触发；生活用途不豁免大额
+  ---
+  duration_ms: 2990.969369
+  type: 'test'
+  ...
+# Subtest: 小额仍可主动分析；不减少会签人数、不放宽实际收款对象
+ok 15 - 小额仍可主动分析；不减少会签人数、不放宽实际收款对象
+  ---
+  duration_ms: 2856.252005
+  type: 'test'
+  ...
+# Subtest: 重复小额合并提示：相同关联事项累计超过阈值；不直接判定违规
+ok 16 - 重复小额合并提示：相同关联事项累计超过阈值；不直接判定违规
+  ---
+  duration_ms: 3138.80644
+  type: 'test'
+  ...
+# Subtest: 无关/撤销/过期窗口不乱合并，明确同一事项按全部承诺合并
+ok 17 - 无关/撤销/过期窗口不乱合并，明确同一事项按全部承诺合并
+  ---
+  duration_ms: 0.781846
+  type: 'test'
+  ...
+# Subtest: 阈值变更须全员确认，未签齐继续原规则；旧金额授权不自动升级
+ok 18 - 阈值变更须全员确认，未签齐继续原规则；旧金额授权不自动升级
+  ---
+  duration_ms: 3251.874611
+  type: 'test'
+  ...
+# Subtest: 提示词与补充偏好版本变更会使旧授权失效，核心规则不可从API覆盖
+ok 19 - 提示词与补充偏好版本变更会使旧授权失效，核心规则不可从API覆盖
+  ---
+  duration_ms: 3169.507094
+  type: 'test'
+  ...
+# Subtest: 长度中断持久化后仅补齐一次：完整JSON校验、两次用量、缓存不重发
+ok 20 - 长度中断持久化后仅补齐一次：完整JSON校验、两次用量、缓存不重发
+  ---
+  duration_ms: 2999.94438
+  type: 'test'
+  ...
+# Subtest: 补齐前暂停或资料变化不再发第二次；第一次用量不被取消抹掉
+ok 21 - 补齐前暂停或资料变化不再发第二次；第一次用量不被取消抹掉
+  ---
+  duration_ms: 2864.292671
+  type: 'test'
+  ...
+# Subtest: 仍被截断最多两次停止，不展示半份报告；最后一次调用额度不允许续写
+ok 22 - 仍被截断最多两次停止，不展示半份报告；最后一次调用额度不允许续写
+  ---
+  duration_ms: 3004.956695
+  type: 'test'
+  ...
+# Subtest: 非长度失败不自动重试；缺usage仍计真实尝试而非免费
+ok 23 - 非长度失败不自动重试；缺usage仍计真实尝试而非免费
+  ---
+  duration_ms: 3101.716381
+  type: 'test'
+  ...
+# Subtest: 严格结构仍阻止假来源；放宽报告字符配额不绕过安全校验
+ok 24 - 严格结构仍阻止假来源；放宽报告字符配额不绕过安全校验
+  ---
+  duration_ms: 2.0529
+  type: 'test'
+  ...
+# Subtest: Anthropic长度停止也可受控补齐，用量正确汇总且未请求工具
+ok 25 - Anthropic长度停止也可受控补齐，用量正确汇总且未请求工具
+  ---
+  duration_ms: 3303.459687
+  type: 'test'
+  ...
+# Subtest: 普通API不能伪造分析进度或完成；部署兼容参数不重新引入价格必填
+ok 26 - 普通API不能伪造分析进度或完成；部署兼容参数不重新引入价格必填
+  ---
+  duration_ms: 3092.504443
+  type: 'test'
+  ...
+# (node:4383) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: 手机入口加载响应式样式，声明安全区且不禁止缩放
+ok 27 - 手机入口加载响应式样式，声明安全区且不禁止缩放
+  ---
+  duration_ms: 76.35246
+  type: 'test'
+  ...
+# Subtest: 本地开发入口返回真正的mobile.css，而不是HTML回退页
+ok 28 - 本地开发入口返回真正的mobile.css，而不是HTML回退页
+  ---
+  duration_ms: 15.443591
+  type: 'test'
+  ...
+# Subtest: 移动端继续加载原业务入口，资源响应保留CSP
+ok 29 - 移动端继续加载原业务入口，资源响应保留CSP
+  ---
+  duration_ms: 17.285048
+  type: 'test'
+  ...
+# (node:4398) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: 通知安全、重试与到期提醒
+    # Subtest: 阿里云 RPC 编码保留 RFC3986 语义
+    ok 1 - 阿里云 RPC 编码保留 RFC3986 语义
+      ---
+      duration_ms: 3.061205
+      type: 'test'
+      ...
+    # Subtest: Webhook 主机白名单阻止任意地址和 SSRF
+    ok 2 - Webhook 主机白名单阻止任意地址和 SSRF
+      ---
+      duration_ms: 0.987163
+      type: 'test'
+      ...
+    # Subtest: 未配置渠道明确标注，不伪装成已送达
+    ok 3 - 未配置渠道明确标注，不伪装成已送达
+      ---
+      duration_ms: 0.875808
+      type: 'test'
+      ...
+    # Subtest: 企业微信 API 接受后不重复发送，但不标记为用户已阅读
+    ok 4 - 企业微信 API 接受后不重复发送，但不标记为用户已阅读
+      ---
+      duration_ms: 2.243972
+      type: 'test'
+      ...
+    # Subtest: 企业微信限流会有限退避重试
+    ok 5 - 企业微信限流会有限退避重试
+      ---
+      duration_ms: 1.736138
+      type: 'test'
+      ...
+    # Subtest: 短信配置不完整不会发送
+    ok 6 - 短信配置不完整不会发送
+      ---
+      duration_ms: 1.671757
+      type: 'test'
+      ...
+    # Subtest: 短信接口返回 OK 只表示服务商接受，并保存回执号
+    ok 7 - 短信接口返回 OK 只表示服务商接受，并保存回执号
+      ---
+      duration_ms: 3.40295
+      type: 'test'
+      ...
+    # Subtest: 短信超时标记不确定，不盲目自动重试
+    ok 8 - 短信超时标记不确定，不盲目自动重试
+      ---
+      duration_ms: 2.247182
+      type: 'test'
+      ...
+    # Subtest: 到期任务和未会签事项生成待办，重复触发不会重复堆积
+    ok 9 - 到期任务和未会签事项生成待办，重复触发不会重复堆积
+      ---
+      duration_ms: 36.399278
+      type: 'test'
+      ...
+    # Subtest: 大量任务按游标分批提醒，后排任务不会饥饿
+    ok 10 - 大量任务按游标分批提醒，后排任务不会饥饿
+      ---
+      duration_ms: 39.989877
+      type: 'test'
+      ...
+    1..10
+ok 30 - 通知安全、重试与到期提醒
+  ---
+  duration_ms: 3129.247289
+  type: 'test'
+  ...
+# (node:4416) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: RFC6238 official SHA1 vectors
+ok 31 - RFC6238 official SHA1 vectors
+  ---
+  duration_ms: 4.722143
+  type: 'test'
+  ...
+# Subtest: MFA: enrollment, partial login, replay rejection, single-use recovery and admin policy
+ok 32 - MFA: enrollment, partial login, replay rejection, single-use recovery and admin policy
+  ---
+  duration_ms: 3965.834626
+  type: 'test'
+  ...
+# Subtest: MFA pending seed belongs to the initiating session; ordinary users cannot administer
+ok 33 - MFA pending seed belongs to the initiating session; ordinary users cannot administer
+  ---
+  duration_ms: 3020.835481
+  type: 'test'
+  ...
+# Subtest: backup encrypts real SQLite snapshot + attachments; restores in independent DB/bucket and verifies source unchanged
+ok 34 - backup encrypts real SQLite snapshot + attachments; restores in independent DB/bucket and verifies source unchanged
+  ---
+  duration_ms: 3208.385591
+  type: 'test'
+  ...
+# Subtest: backup rejects same resource bindings and detects tampered ciphertext with visible failure alert
+ok 35 - backup rejects same resource bindings and detects tampered ciphertext with visible failure alert
+  ---
+  duration_ms: 1824.497417
+  type: 'test'
+  ...
+# Subtest: global notification secrets masked; project opt-in binds explicit revision; rotation suspends inheritance
+ok 36 - global notification secrets masked; project opt-in binds explicit revision; rotation suspends inheritance
+  ---
+  duration_ms: 1759.343395
+  type: 'test'
+  ...
+# Subtest: project ownership requires all original partners and target explicit acceptance
+ok 37 - project ownership requires all original partners and target explicit acceptance
+  ---
+  duration_ms: 2726.514037
+  type: 'test'
+  ...
+# Subtest: exit settlement retains outgoing partner until actual payment, independent verification and final unanimous vote
+ok 38 - exit settlement retains outgoing partner until actual payment, independent verification and final unanimous vote
+  ---
+  duration_ms: 3179.241499
+  type: 'test'
+  ...
+# Subtest: offline archive restores into new directory, rejects overwrite/wrong key, and has no network dependency
+ok 39 - offline archive restores into new directory, rejects overwrite/wrong key, and has no network dependency
+  ---
+  duration_ms: 1913.716784
+  type: 'test'
+  ...
+# Subtest: MFA recovery concurrent submissions are one-use; stale second factor cannot write admin configuration
+ok 40 - MFA recovery concurrent submissions are one-use; stale second factor cannot write admin configuration
+  ---
+  duration_ms: 2991.130634
+  type: 'test'
+  ...
+# Subtest: cleared global SMS secrets never resurrect from old deployment variables; quota is atomic
+ok 41 - cleared global SMS secrets never resurrect from old deployment variables; quota is atomic
+  ---
+  duration_ms: 1876.407073
+  type: 'test'
+  ...
+# Subtest: automatic backup is idempotent by UTC date and decrypts old backups after key rotation using explicit old-key ring
+ok 42 - automatic backup is idempotent by UTC date and decrypts old backups after key rotation using explicit old-key ring
+  ---
+  duration_ms: 1890.581982
+  type: 'test'
+  ...
+# Subtest: a second wrapper to the production database is rejected by restore sandbox inspection
+ok 43 - a second wrapper to the production database is rejected by restore sandbox inspection
+  ---
+  duration_ms: 1952.892376
+  type: 'test'
+  ...
+# Subtest: exit plan rejects stale finance, stages all handover and retains money/decisions for shared responsibility
+ok 44 - exit plan rejects stale finance, stages all handover and retains money/decisions for shared responsibility
+  ---
+  duration_ms: 3105.426999
+  type: 'test'
+  ...
+# Subtest: deployment binding checker rejects shared resource declarations and permits disabled optional features
+ok 45 - deployment binding checker rejects shared resource declarations and permits disabled optional features
+  ---
+  duration_ms: 4.639443
+  type: 'test'
+  ...
+# Subtest: backup status warns without recent success and root key reuse is rejected
+ok 46 - backup status warns without recent success and root key reuse is rejected
+  ---
+  duration_ms: 1982.755574
+  type: 'test'
+  ...
+# Subtest: authenticated archive manifest must cover every registered attachment with matching metadata
+ok 47 - authenticated archive manifest must cover every registered attachment with matching metadata
+  ---
+  duration_ms: 1.371389
+  type: 'test'
+  ...
+# (node:4458) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: 个人密码修改仍需本人验证；旧密码及其他会话失效，不影响其他成员
+ok 48 - 个人密码修改仍需本人验证；旧密码及其他会话失效，不影响其他成员
+  ---
+  duration_ms: 4359.631009
+  type: 'test'
+  ...
+# (node:4469) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: 访问控制、会话、附件与数据完整性
+    # Subtest: 匿名访问项目与附件被拒绝
+    ok 1 - 匿名访问项目与附件被拒绝
+      ---
+      duration_ms: 4.912262
+      type: 'test'
+      ...
+    # Subtest: CSRF 和 Origin 校验不能由前端按钮绕过
+    ok 2 - CSRF 和 Origin 校验不能由前端按钮绕过
+      ---
+      duration_ms: 1.654808
+      type: 'test'
+      ...
+    # Subtest: 已初始化系统不能再次创建超级账号
+    ok 3 - 已初始化系统不能再次创建超级账号
+      ---
+      duration_ms: 0.983968
+      type: 'test'
+      ...
+    # Subtest: 重新登录不会继承旧会话的重要操作确认
+    ok 4 - 重新登录不会继承旧会话的重要操作确认
+      ---
+      duration_ms: 449.732559
+      type: 'test'
+      ...
+    # Subtest: 内部成员加入、附件归档接口不能伪造调用
+    ok 5 - 内部成员加入、附件归档接口不能伪造调用
+      ---
+      duration_ms: 4.298489
+      type: 'test'
+      ...
+    # Subtest: 金额必须是整数分，不能提交小数分和超限数据
+    ok 6 - 金额必须是整数分，不能提交小数分和超限数据
+      ---
+      duration_ms: 6.914065
+      type: 'test'
+      ...
+    # Subtest: 附件存入私有对象目录，下载强制附件且可核对实际 SHA-256
+    ok 7 - 附件存入私有对象目录，下载强制附件且可核对实际 SHA-256
+      ---
+      duration_ms: 21.682497
+      type: 'test'
+      ...
+    # Subtest: HTML/SVG 文件不作为可执行附件接收
+    ok 8 - HTML/SVG 文件不作为可执行附件接收
+      ---
+      duration_ms: 3.793645
+      type: 'test'
+      ...
+    # Subtest: 另一个项目的成员不能查看本项目和凭证
+    ok 9 - 另一个项目的成员不能查看本项目和凭证
+      ---
+      duration_ms: 479.605876
+      type: 'test'
+      ...
+    # Subtest: 伪造其他项目的附件 ID 不能关联
+    ok 10 - 伪造其他项目的附件 ID 不能关联
+      ---
+      duration_ms: 4.195144
+      type: 'test'
+      ...
+    # Subtest: CSV 防公式注入，恶意标题只作为文本保存
+    ok 11 - CSV 防公式注入，恶意标题只作为文本保存
+      ---
+      duration_ms: 10.864985
+      type: 'test'
+      ...
+    # Subtest: 响应包含 CSP、HttpOnly 会话和禁止缓存的 API 头
+    ok 12 - 响应包含 CSP、HttpOnly 会话和禁止缓存的 API 头
+      ---
+      duration_ms: 463.3341
+      type: 'test'
+      ...
+    # Subtest: 直接篡改项目状态会导致审计链校验失败
+    ok 13 - 直接篡改项目状态会导致审计链校验失败
+      ---
+      duration_ms: 5.772097
+      type: 'test'
+      ...
+    1..13
+ok 49 - 访问控制、会话、附件与数据完整性
+  ---
+  duration_ms: 4327.317206
+  type: 'test'
+  ...
+# (node:4480) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: 多人合作：真实 API、数据库和授权流程
+    # Subtest: 三名成员加入并共同确认基准后，项目进入执行阶段
+    ok 1 - 三名成员加入并共同确认基准后，项目进入执行阶段
+      ---
+      duration_ms: 2.959259
+      type: 'test'
+      ...
+    # Subtest: 知会和已阅不会自动构成批准
+    ok 2 - 知会和已阅不会自动构成批准
+      ---
+      duration_ms: 16.752265
+      type: 'test'
+      ...
+    # Subtest: 一人批准不能下单，重复批准不能凑人数
+    ok 3 - 一人批准不能下单，重复批准不能凑人数
+      ---
+      duration_ms: 11.35051
+      type: 'test'
+      ...
+    # Subtest: 补充要求会阻塞会签，回复评论本身也不是同意
+    ok 4 - 补充要求会阻塞会签，回复评论本身也不是同意
+      ---
+      duration_ms: 25.501873
+      type: 'test'
+      ...
+    # Subtest: 全员签齐才通过
+    ok 5 - 全员签齐才通过
+      ---
+      duration_ms: 9.831675
+      type: 'test'
+      ...
+    # Subtest: 修改批准内容产生新版本，旧决定保留但全部失效
+    ok 6 - 修改批准内容产生新版本，旧决定保留但全部失效
+      ---
+      duration_ms: 9.659131
+      type: 'test'
+      ...
+    # Subtest: 一票反对不能通过，预算占用释放
+    ok 7 - 一票反对不能通过，预算占用释放
+      ---
+      duration_ms: 9.090404
+      type: 'test'
+      ...
+    # Subtest: 尚未开放的下一阶段不可采购
+    ok 8 - 尚未开放的下一阶段不可采购
+      ---
+      duration_ms: 9.584196
+      type: 'test'
+      ...
+    # Subtest: 并发提交不会穿透阶段预算
+    ok 9 - 并发提交不会穿透阶段预算
+      ---
+      duration_ms: 57.760623
+      type: 'test'
+      ...
+    # Subtest: 同供应商同阶段多笔采购给出拆单提示
+    ok 10 - 同供应商同阶段多笔采购给出拆单提示
+      ---
+      duration_ms: 32.673112
+      type: 'test'
+      ...
+    # Subtest: 收款对象变更不能沿用批准
+    ok 11 - 收款对象变更不能沿用批准
+      ---
+      duration_ms: 28.844674
+      type: 'test'
+      ...
+    # Subtest: 已下单不能改写原单
+    ok 12 - 已下单不能改写原单
+      ---
+      duration_ms: 2.294069
+      type: 'test'
+      ...
+    # Subtest: 相同幂等键重放付款只记录一次
+    ok 13 - 相同幂等键重放付款只记录一次
+      ---
+      duration_ms: 13.754037
+      type: 'test'
+      ...
+    # Subtest: 超额付款被后端拒绝
+    ok 14 - 超额付款被后端拒绝
+      ---
+      duration_ms: 2.708978
+      type: 'test'
+      ...
+    # Subtest: 登记人不能复核自己的账目
+    ok 15 - 登记人不能复核自己的账目
+      ---
+      duration_ms: 9.006893
+      type: 'test'
+      ...
+    # Subtest: 只有独立指定验收人可以登记收货，累计数量不能超购
+    ok 16 - 只有独立指定验收人可以登记收货，累计数量不能超购
+      ---
+      duration_ms: 12.378733
+      type: 'test'
+      ...
+    # Subtest: 未经批准但已发生的支出允许记录，并立即减少保守现金
+    ok 17 - 未经批准但已发生的支出允许记录，并立即减少保守现金
+      ---
+      duration_ms: 12.756206
+      type: 'test'
+      ...
+    # Subtest: 资金不确定的流入不能用于新采购
+    ok 18 - 资金不确定的流入不能用于新采购
+      ---
+      duration_ms: 9.779195
+      type: 'test'
+      ...
+    # Subtest: 紧急暂停阻止新增承诺，但不会隐藏已有订单
+    ok 19 - 紧急暂停阻止新增承诺，但不会隐藏已有订单
+      ---
+      duration_ms: 26.890265
+      type: 'test'
+      ...
+    # Subtest: 已生效项目不能由管理员直接修改计划/成员
+    ok 20 - 已生效项目不能由管理员直接修改计划/成员
+      ---
+      duration_ms: 5.731766
+      type: 'test'
+      ...
+    # Subtest: 全员预算变更使未下单的采购失效重审，已执行订单历史保留
+    ok 21 - 全员预算变更使未下单的采购失效重审，已执行订单历史保留
+      ---
+      duration_ms: 159.70769
+      type: 'test'
+      ...
+    # Subtest: 任务由指定负责人提交，指定的另一人验收
+    ok 22 - 任务由指定负责人提交，指定的另一人验收
+      ---
+      duration_ms: 24.291918
+      type: 'test'
+      ...
+    # Subtest: 审计链校验通过，业务层没有审计删除能力
+    ok 23 - 审计链校验通过，业务层没有审计删除能力
+      ---
+      duration_ms: 12.62899
+      type: 'test'
+      ...
+    1..23
+ok 50 - 多人合作：真实 API、数据库和授权流程
+  ---
+  duration_ms: 3535.102229
+  type: 'test'
+  ...
+1..50
+# tests 160
+# suites 0
+# pass 160
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 199132.690347
