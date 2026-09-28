@@ -1,6 +1,6 @@
 import { createOperationsUI } from './ops-ui.js';
 // The UI hides administration for non-admins; every corresponding API also checks
-// the current account, CSRF, recent reauthentication and optimistic revisions.
+// the current account, CSRF and optimistic revisions; sensitive non-AI actions also reauthenticate.
 export function createAdminUI({S,e,api,reauth,showForm,showInfo,render,btn,panel,money,shortDate,toast,toCents,amountInput,openSecurity}){
  const tabs=[['overview','管理总览'],['projects','项目与回收站'],['users','用户与权限'],['ai','AI模型配置'],['security','二次验证'],['backups','备份与恢复'],['notification-settings','通知服务商'],['delivery','投递与告警'],['audit','管理员日志']];
  const life={active:'正常项目',archived:'已归档（只读）',trashed:'回收站'},roles={partner:'合伙人',operator:'执行成员',viewer:'只读成员'};
@@ -19,7 +19,7 @@ export function createAdminUI({S,e,api,reauth,showForm,showInfo,render,btn,panel
  function pager(){const next=data.nextOffset??data.nextBefore;return `<div class="admin-pagination">${offset||before?button('返回第一页','first','','small'):''}${next!=null?button('下一页','next',`data-next="${next}"`,'small'):''}</div>`;}
  function card(title,value,note){return `<section class="metric"><div class="metric-label">${e(title)}</div><div class="metric-value">${e(value)}</div><p class="metric-note">${e(note)}</p></section>`;}
  function page(){
-  let html=`<div class="page-head"><div><div class="eyebrow">SYSTEM ADMIN / V1.4.0</div><h1>系统管理</h1><p>管理账号、项目生命周期和平台配置；不代替任何合伙人审批。</p></div><div class="buttons">${button('刷新','refresh','','small')}${button('返回我的项目','exit','','small')}</div></div>`;
+  let html=`<div class="page-head"><div><div class="eyebrow">SYSTEM ADMIN / V1.4.1</div><h1>系统管理</h1><p>管理账号、项目生命周期和平台配置；不代替任何合伙人审批。</p></div><div class="buttons">${button('刷新','refresh','','small')}${button('返回我的项目','exit','','small')}</div></div>`;
   html+=`<nav class="admin-tabs" aria-label="系统管理栏目">${tabs.map(([id,title])=>button(title,'tab',`data-section="${id}" aria-current="${tab===id?'page':'false'}"`,tab===id?'primary':'')).join('')}</nav>`;
   if(!data)return html+'<p>正在读取管理数据…</p>';
   if(tab==='overview'){
@@ -41,14 +41,14 @@ export function createAdminUI({S,e,api,reauth,showForm,showInfo,render,btn,panel
   }
   if(tab==='ai'){
    html+=panel('AI 服务连接配置',`<div class="panel-body"><dl class="kv"><dt>配置来源</dt><dd>${data.source==='database'?'管理员后台配置':'部署环境变量（尚未在后台保存）'}</dd><dt>全站启用</dt><dd>${data.enabled?'已启用':'未启用'}</dd><dt>API Key</dt><dd>${data.keyConfigured?'已保存 · 不回显原值':'未配置'}</dd><dt>接口协议</dt><dd>${e(data.provider)}</dd><dt>API URL</dt><dd class="admin-wrap">${e(data.baseUrl)}</dd><dt>Model</dt><dd class="admin-wrap">${e(data.model||'未配置')}</dd><dt>配置版本</dt><dd>${data.revision}</dd></dl><div class="buttons">${button('配置 Key / Model / URL','ai-edit','','primary')}${button('测试连接（可能计费）','ai-test','','small')}${button('内置分析提示词','ai-prompts','','small')}${button('补充分析偏好（可选）','ai-guidance','','small')}</div><p class="muted">Key只以加密形式保存在服务端，管理员也不能读取已存明文。普通成员没有此管理入口。</p></div>`);
-   if(!data.encryptionReady)html+='<div class="alert bad">部署者还需设置 CONFIG_ENCRYPTION_KEY，网页不能安全地替你生成并保管服务端根密钥。</div>';
+   if(!data.encryptionReady)html+=`<div class="alert bad">${e(data.encryptionIssue||'请先配置有效的CONFIG_ENCRYPTION_KEY，网页不能替换已有加密根密钥。')}</div>`;
    html+='<div class="alert info">保存不会发起模型调用。只需配置URL、Model和Key，无须填写价格或输出长度。提示词已内置，默认简短且通用。修改配置后项目须重新全员确认；用量不代表账单。</div>';
   }
   if(tab==='audit')html+=panel('管理员操作日志',`<div class="panel-body">${data.records.map(x=>`<article class="comment"><div class="comment-meta"><span>#${x.sequence} · ${e(x.actor_name)}</span><time>${shortDate(x.created_at)}</time></div><strong>${e(x.action)}</strong><p class="admin-wrap">对象：${e(x.target_id||'系统')}</p><pre class="admin-json">${e(JSON.stringify(x.details,null,2))}</pre></article>`).join('')||'<p>暂无管理操作记录。</p>'}</div>`)+pager()+'<p class="muted">日志为应用层只追加记录，不是第三方不可篡改存证。用户密码、API Key不会写入日志。</p>';
   html+=OPS.page(tab,data);
   return html;
  }
- async function save(path,body){await reauth();return api(base+path,{method:'POST',body});}
+ async function save(path,body){if(!['/ai-settings','/ai-settings/test'].includes(path))await reauth();return api(base+path,{method:'POST',body});}
  function passwordField(label='临时密码（12–128字符）'){return {name:'temporaryPassword',label,type:'password',revealPassword:true,passwordLabel:'临时密码',autocomplete:'new-password',maxLength:128,full:true,help:'请通过可信渠道单独交给本人；首次登录必须改密，系统不提供明文找回。'};}
  async function userForm(user=null){
   showForm(user?'修改用户权限':'新建系统用户',[
@@ -108,15 +108,16 @@ export function createAdminUI({S,e,api,reauth,showForm,showInfo,render,btn,panel
   if(name==='admin-ai-edit'){
    const c=await api(base+'/ai-settings');
    showForm('AI模型配置（仅系统管理员）',[
+    ...(!c.encryptionReady?[{name:'encryptionNotice',type:'html',full:true,html:`<div class="alert bad">${e(c.encryptionIssue||'请先配置服务端CONFIG_ENCRYPTION_KEY，否则无法加密保存新的API Key。')}</div>`}]:[]),
     {name:'enabled',label:'全站启用外部AI',type:'checkbox',value:c.enabled,full:true},
-    {name:'provider',label:'API协议',type:'select',options:[['openai_compatible','OpenAI兼容 Chat Completions'],['anthropic','Anthropic Messages']],value:c.provider,full:true},
-    {name:'baseUrl',label:'API URL基址（含 /v1，不含最终接口路径）',value:c.baseUrl,full:true,maxLength:500},
+    {name:'provider',label:'API协议',type:'select',options:[['openai_compatible','OpenAI兼容／中转站 Chat Completions'],['anthropic','Anthropic Messages']],value:c.provider,full:true},
+    {name:'baseUrl',label:'API URL（支持中转站）',value:c.baseUrl,full:true,maxLength:500,help:'可填域名、含 /v1 的基址，或完整 /chat/completions 地址；系统会规范路径。自定义路径按服务商说明填写。'},
     {name:'model',label:'Model（真实模型ID）',value:c.model,full:true,maxLength:120},
     {name:'key',label:c.keyConfigured?'替换 API Key（留空保留原值）':'API Key',type:'password',required:false,full:true,maxLength:8192,autocomplete:'off'},
     {name:'clearKey',label:'清除已保存Key（须同时关闭AI）',type:'checkbox',full:true},
     {name:'confirmExternalHost',label:'确认第三方接收方',type:'checkbox',full:true,checkboxText:'如使用第三方网关，我已核对域名与数据处理方式，同意将其加入本应用允许名单'},fieldReason
-   ],async a=>{await save('/ai-settings',{...a,enabled:!!a.enabled,clearKey:!!a.clearKey,confirmExternalHost:!!a.confirmExternalHost,expectedRevision:c.revision});await refresh();toast('配置已加密保存；项目需重新确认AI规则，未调用模型');},
-   {intro:'不回显已有Key。保存后覆盖原环境变量AI配置；Key/配置变更使旧项目授权失效。不填写token价格或输出字数。实际费用以服务商账单为准。',submit:'加密保存配置'});return;
+   ],async a=>{await save('/ai-settings',{...a,enabled:!!a.enabled,clearKey:!!a.clearKey,confirmExternalHost:!!a.confirmExternalHost,expectedRevision:c.revision});await refresh();toast(a.enabled?'配置已加密保存并启用；项目需重新确认AI规则，未调用模型':'配置已加密保存，但全站AI仍关闭；需勾选启用后才能分析');},
+   {intro:'支持中转站API，已登录管理员可直接保存，不再重复输入密码或验证码。已有Key不回显；未勾选启用只保存配置。保存不会调用模型，配置变更后项目须重新确认。',submit:'加密保存配置'});return;
   }
   if(name==='admin-ai-prompts'){
    const c=await api(base+'/ai-settings'),p=c.prompts;
@@ -131,7 +132,7 @@ export function createAdminUI({S,e,api,reauth,showForm,showInfo,render,btn,panel
   if(name==='admin-ai-test'){
    const c=await api(base+'/ai-settings');
    showForm('测试AI连接', [{name:'confirmCost',label:'确认可能计费',type:'checkbox',full:true,checkboxText:'确认仅发送通用测试句，不包含项目数据；调用可能计费，失败不会自动重试'}],async a=>{
-    if(!a.confirmCost)throw Error('请先确认测试及可能费用');const v=await save('/ai-settings/test',{confirmCost:true,expectedRevision:c.revision});toast(v.message,!v.ok);
+    if(!a.confirmCost)throw Error('请先确认测试及可能费用');const v=await save('/ai-settings/test',{confirmCost:true,expectedRevision:c.revision});if(!v.ok)throw Error(v.message);showInfo('AI连接测试结果',`<p>${e(v.message)}</p><p class="muted">本次只验证基础响应，不代表项目分析已完成。</p>`);
    },{submit:'发起一次测试'});return;
   }
  }

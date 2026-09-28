@@ -106,13 +106,14 @@ with sync_playwright() as pw:
             tab(p,'overview');p.screenshot(path=str(OUT/f'admin-{width}-overview.png'),full_page=True)
         ctx.close()
     ctx,p=mount(b,390);admin(p);tab(p,'ai');p.locator('[data-action="admin-ai-edit"]').click();d=sheet(p,'保存配置')
-    d.locator('[name="reason"]').fill('虚构测试配置更新');d.locator('[name="key"]').fill('Synthetic-config-key-234!');d.get_by_role('button',name='加密保存配置').click();reauth(p)
+    d.locator('[name="reason"]').fill('虚构测试配置更新');d.locator('[name="key"]').fill('Synthetic-config-key-234!');d.get_by_role('button',name='加密保存配置').click()
     p.wait_for_function('writes.some(x=>x.path==="/api/admin/ai-settings")');p.wait_for_function('!document.querySelector("#modal").open')
     payload=p.evaluate('writes.find(x=>x.path==="/api/admin/ai-settings").body');assert 'inputCentsPerMillion' not in payload and 'outputCentsPerMillion' not in payload and 'outputTokens' not in payload and payload['expectedRevision']==1
     assert not p.evaluate('writes.some(x=>x.path.endsWith("/ai-settings/test"))');assert p.locator('#modal [name="key"]').input_value()==''
-    p.locator('[data-action="admin-ai-test"]').click();p.locator('#modal [name="confirmCost"]').check();p.locator('#modal').get_by_role('button',name='发起一次测试').click();reauth(p)
+    p.locator('[data-action="admin-ai-test"]').click();p.locator('#modal [name="confirmCost"]').check();p.locator('#modal').get_by_role('button',name='发起一次测试').click()
     p.wait_for_function('writes.some(x=>x.path.endsWith("/ai-settings/test"))');assert p.evaluate('writes.filter(x=>x.path.endsWith("/ai-settings/test")).length')==1
-    record('配置保存通过本人验证、无需填写价格/长度且校验版本；保存不测试，单独确认才发起一次测试请求');ctx.close()
+    assert not p.evaluate('writes.some(x=>x.path==="/api/auth/reauth")')
+    record('AI配置保存/测试使用现有登录不再验密码；无价格/长度输入，版本校验和计费确认保留');ctx.close()
     ctx,p=mount(b,390,kind='member');assert p.locator('[data-action="admin-open"]').count()==0;assert p.locator('.admin-tabs').count()==0;record('普通用户没有管理员导航或配置控件');ctx.close()
     ctx,p=mount(b,390,kind='empty');p.locator('.admin-tabs').wait_for();record('管理员无项目时仍自动进入管理后台，不被项目列表阻挡');ctx.close()
     ctx,p=mount(b,390,kind='forced');assert not p.locator('.app-shell').count();assert not p.evaluate('writes.length')

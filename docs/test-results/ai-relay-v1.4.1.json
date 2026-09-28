@@ -1,0 +1,79 @@
+{
+  "version": "1.4.1",
+  "baseCommit": "6f3a92bcc2ec57d424e7c90d1e8407e16e746030",
+  "date": "2026-09-28",
+  "scope": "Local Node 22.16.0 + SQLite adapter; offline Chromium with explicit synthetic HTTP doubles. No production or real API calls.",
+  "node": {
+    "command": "npm test",
+    "tests": 167,
+    "pass": 167,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "durationMs": 199464.443886
+  },
+  "syntax": {
+    "command": "npm run check",
+    "javascriptFiles": 52,
+    "passed": true
+  },
+  "adminUi": {
+    "scope": "Offline Chromium: real frontend, explicit HTTP doubles, synthetic fixture; no real device or cloud/API calls",
+    "passed": 24,
+    "checks": [
+      "320px：五个管理页面与移动导航可用，无页面级横向溢出",
+      "320px：项目筛选、只读审阅和删除二次确认；打开表单不执行删除",
+      "320px：用户权限表单、临时密码显示切换、取消后清空",
+      "320px：Key不回显/不持久化，配置和测试入口独立，测试不默认同意计费",
+      "390px：五个管理页面与移动导航可用，无页面级横向溢出",
+      "390px：项目筛选、只读审阅和删除二次确认；打开表单不执行删除",
+      "390px：用户权限表单、临时密码显示切换、取消后清空",
+      "390px：Key不回显/不持久化，配置和测试入口独立，测试不默认同意计费",
+      "430px：五个管理页面与移动导航可用，无页面级横向溢出",
+      "430px：项目筛选、只读审阅和删除二次确认；打开表单不执行删除",
+      "430px：用户权限表单、临时密码显示切换、取消后清空",
+      "430px：Key不回显/不持久化，配置和测试入口独立，测试不默认同意计费",
+      "768px：五个管理页面与移动导航可用，无页面级横向溢出",
+      "768px：项目筛选、只读审阅和删除二次确认；打开表单不执行删除",
+      "768px：用户权限表单、临时密码显示切换、取消后清空",
+      "768px：Key不回显/不持久化，配置和测试入口独立，测试不默认同意计费",
+      "1440px：五个管理页面与移动导航可用，无页面级横向溢出",
+      "1440px：项目筛选、只读审阅和删除二次确认；打开表单不执行删除",
+      "1440px：用户权限表单、临时密码显示切换、取消后清空",
+      "1440px：Key不回显/不持久化，配置和测试入口独立，测试不默认同意计费",
+      "AI配置保存/测试使用现有登录不再验密码；无价格/长度输入，版本校验和计费确认保留",
+      "普通用户没有管理员导航或配置控件",
+      "管理员无项目时仍自动进入管理后台，不被项目列表阻挡",
+      "首次临时密码强制修改页：不一致不提交，通过本人核验并修改后才进入业务"
+    ],
+    "pageErrors": []
+  },
+  "relayUi": {
+    "scope": "Offline Chromium, real frontend with explicit HTTP doubles; no real relay, Cloudflare, phone device or API key",
+    "passed": 15,
+    "checks": [
+      "320px: relay explanation and masked key, disabled state and no overflow",
+      "320px: save failure is actionable, no password/MFA prompt, key remains masked",
+      "320px: save reuses login, does not test or enable AI, clears key after close",
+      "320px: explicit test consent, one request, useful HTTP error without reauthentication",
+      "320px: supplemental preference also saves without reauthentication",
+      "390px: relay explanation and masked key, disabled state and no overflow",
+      "390px: save failure is actionable, no password/MFA prompt, key remains masked",
+      "390px: save reuses login, does not test or enable AI, clears key after close",
+      "390px: explicit test consent, one request, useful HTTP error without reauthentication",
+      "390px: supplemental preference also saves without reauthentication",
+      "1440px: relay explanation and masked key, disabled state and no overflow",
+      "1440px: save failure is actionable, no password/MFA prompt, key remains masked",
+      "1440px: save reuses login, does not test or enable AI, clears key after close",
+      "1440px: explicit test consent, one request, useful HTTP error without reauthentication",
+      "1440px: supplemental preference also saves without reauthentication"
+    ],
+    "pageErrors": []
+  },
+  "notValidated": [
+    "Cloudflare official runtime and production D1",
+    "Real relay API authentication/model/network",
+    "Physical iPhone/Android",
+    "Cause of screenshot save failure without production logs"
+  ]
+}

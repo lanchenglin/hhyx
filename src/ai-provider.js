@@ -1,3 +1,4 @@
+import {setOpenAiOutput,providerHttpMessage} from './ai-transport.js';
 import { assert, AppError } from './util.js';
 import { promptFor } from './ai-prompts.js';
 import { redact } from './ai-snapshot.js';
@@ -46,11 +47,11 @@ export function requestSpec(engine,snapshot,key,continuation='') {
  if(engine.provider==='anthropic') {
   url=engine.baseUrl+'/messages';headers['x-api-key']=key;headers['anthropic-version']='2023-06-01';
   Object.assign(body,{max_tokens:engine.outputTokens,system,messages});
-  if(engine.structured&&!continuation)body.output_config={format:{type:'json_schema',schema:REPORT_SCHEMA}};
+  if(engine.structured&&(!engine.responseMode||engine.responseMode==='json_schema')&&!continuation)body.output_config={format:{type:'json_schema',schema:REPORT_SCHEMA}};
  } else {
   url=engine.baseUrl+'/chat/completions';headers.Authorization='Bearer '+key;
-  Object.assign(body,{max_completion_tokens:engine.outputTokens,messages:[{role:'system',content:system},...messages]});
-  if(engine.structured&&!continuation)body.response_format={type:'json_schema',json_schema:{name:'cooperation_review',strict:true,schema:REPORT_SCHEMA}};
+  Object.assign(body,{messages:[{role:'system',content:system},...messages]});
+  setOpenAiOutput(body,engine,REPORT_SCHEMA,Boolean(continuation));
  }
  return {url,headers,body};
 }
@@ -81,7 +82,8 @@ export async function invokeProvider(env,engine,snapshot,continuation='') {
  const timer=setTimeout(()=>controller.abort(),20000);let usage=null;
  try {
   const response=await (env.AI_FETCH||fetch)(spec.url,{method:'POST',headers:spec.headers,body:JSON.stringify(spec.body),redirect:'error',signal:controller.signal});
-  if(!response.ok){await response.body?.cancel();return {status:'failed',errorCode:'PROVIDER_HTTP_'+response.status,error:'模型请求失败；已记录调用，不自动重试，请核对服务商配置和账单。',usage:null};}
+  if(!response.ok){await response.body?.cancel();return {status:'failed',errorCode:'PROVIDER_HTTP_'+response.status,error:providerHttpMessage(response.status,{html:(response.headers.get('content-type')||'').includes('text/html')}),usage:null};}
+  if((response.headers.get('content-type')||'').includes('text/html')){await response.body?.cancel();return {status:'failed',errorCode:'PROVIDER_HTML',error:providerHttpMessage(response.status,{html:true}),usage:null};}
   const payload=await boundedJson(response);usage=parseUsage(payload,engine);
   let content,stop,truncated=false;
   if(engine.provider==='anthropic') {
@@ -104,4 +106,28 @@ export async function invokeProvider(env,engine,snapshot,continuation='') {
   if(error.name==='AbortError'||error.name==='TimeoutError'||controller.signal.aborted)return {status:'uncertain',errorCode:'TIMEOUT',error:'请求超时，服务商可能已计费；未生成可用分析，不会自动重试。',usage};
   return {status:usage?'failed':'uncertain',errorCode:usage?'INVALID_REPORT':'PROVIDER_UNKNOWN',error:usage?'报告结构、引用或完成状态校验未通过，未作为有效结论展示。':'模型调用结果不确定，未生成可用分析；不会自动重试。',usage};
  } finally {clearTimeout(timer);}
+}
+
+// A separate explicitly confirmed probe, with the same token-field selection as reports.
+export async function probeProvider(env,engine) {
+ const headers={'Content-Type':'application/json','Accept':'application/json'};
+ const data={model:engine.model,messages:[{role:'user',content:'Reply with the word OK. This is a connection test with no business data.'}]};
+ let endpoint;
+ if(engine.provider==='anthropic'){
+  endpoint=engine.baseUrl+'/messages';headers['x-api-key']=env.AI_API_KEY;headers['anthropic-version']='2023-06-01';data.max_tokens=128;
+ }else{
+  endpoint=engine.baseUrl+'/chat/completions';headers.Authorization='Bearer '+env.AI_API_KEY;setOpenAiOutput(data,{...engine,outputTokens:128});
+ }
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+ try{
+  const response=await (env.AI_TEST_FETCH||fetch)(endpoint,{method:'POST',headers,body:JSON.stringify(data),signal:controller.signal,redirect:'error'});
+  const html=(response.headers.get('content-type')||'').includes('text/html');
+  if(!response.ok||html){await response.body?.cancel();return {ok:false,httpStatus:response.status,message:providerHttpMessage(response.status,{html}),usageKnown:false};}
+  const value=await boundedJson(response);
+  const content=engine.provider==='anthropic'?value?.content?.find(x=>x.type==='text')?.text:value?.choices?.[0]?.message?.content;
+  const stop=engine.provider==='anthropic'?value?.stop_reason:value?.choices?.[0]?.finish_reason;
+  const ok=typeof content==='string'&&content.trim().length>0;
+  return {ok,httpStatus:response.status,message:ok?'已收到模型文本响应；仅验证鉴权及基础接口，不代表正式分析质量或结构化输出已验收。':['length','max_tokens'].includes(stop)?'测试请求已被接收，但输出额度用完仍无正文；请核对所选模型的推理模式，不能视为分析已通过。':'模型返回了非预期或空的正文，请核对模型、协议与中转站响应格式。未展示服务商原文。',usageKnown:!!parseUsage(value,engine)};
+ }catch{return {ok:false,message:controller.signal.aborted?'连接测试超时，服务商可能计费；不会自动重试。':'连接测试未完成，请核对URL、网络和响应格式；是否计费不确定，不会自动重试。',usageKnown:false};}
+ finally{clearTimeout(timer);}
 }

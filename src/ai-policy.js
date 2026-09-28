@@ -1,3 +1,4 @@
+import {normalizeAiUrl,transportPolicy} from './ai-transport.js';
 import { assert, text, sha } from './util.js';
 import { AI_PROMPT_VERSION, REPORT_STYLES } from './ai-prompts.js';
 export { AI_PROMPT_VERSION };
@@ -46,14 +47,14 @@ export function publicEngine(env) {
  try {
   const provider = env.AI_PROVIDER || 'openai_compatible';
   assert(['openai_compatible','anthropic'].includes(provider), 'AI_PROVIDER 仅支持 openai_compatible 或 anthropic');
-  const u = new URL(env.AI_BASE_URL || (provider === 'anthropic' ? 'https://api.anthropic.com/v1' : 'https://api.openai.com/v1'));
+  const u = new URL(normalizeAiUrl(env.AI_BASE_URL || (provider === 'anthropic' ? 'https://api.anthropic.com/v1' : 'https://api.openai.com/v1'),provider));
   const allowed = new Set(['api.openai.com', 'api.anthropic.com', ...String(env.AI_ALLOWED_HOSTS || '').split(',').map(x=>x.trim()).filter(Boolean)]);
   assert(u.protocol === 'https:' && !u.username && !u.password && !u.search && !u.hash && (!u.port || u.port === '443'), '模型地址必须为无鉴权参数的 HTTPS API 基址');
   assert(allowed.has(u.hostname) && /^[a-zA-Z0-9][a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(u.hostname) && !/(^|\.)(localhost|local|internal|test|invalid)$/.test(u.hostname), '模型域名未获服务端允许；第三方端点需配置 AI_ALLOWED_HOSTS');
   assert(!u.pathname.includes('//') && !/%/.test(u.pathname), 'API 基址路径不正确');
   const model = text(env.AI_MODEL, 'AI_MODEL', 120);
   assert(/^[a-zA-Z0-9._:/-]+$/.test(model), '模型标识格式不正确');
-  const config = {provider, baseUrl:u.href.replace(/\/$/, ''), model, scope:AI_SCOPE, engineVersion:2,
+  const config = {provider, baseUrl:u.href.replace(/\/$/, ''), model, scope:AI_SCOPE, engineVersion:3, ...transportPolicy(env,provider,u.href),
    promptVersion:AI_PROMPT_VERSION, outputTokens:Number(env.AI_OUTPUT_TOKENS || 8192),
    structured:env.AI_STRUCTURED_OUTPUT !== 'false',
    analysisGuidance:text(env.AI_ANALYSIS_GUIDANCE,'管理员补充偏好',2000,false),

@@ -1,3 +1,4 @@
+import {probeProvider} from './ai-provider.js';
 import {operationsAdminRoute} from './ops-admin.js';
 import {requireAdminFactor,requireFreshFactor,mfaPolicy} from './mfa.js';
 import {getReport} from './ai.js';
@@ -6,7 +7,7 @@ import {assert,AppError,body,json,uid,now,sha,text,email,hashPassword} from './u
 import {one,rows,load,mutate,auditRows,verifyAudit} from './store.js';
 import {requireReauth,rateLimit,publicUser} from './auth.js';
 import {finance} from './domain.js';
-import {AI_CONFIG_KEY,readAiConfig,resolveAiEnv,aiSettingsView,validateAiSettings} from './system-config.js';
+import {AI_CONFIG_KEY,readAiConfig,resolveAiEnv,aiSettingsView,validateAiSettings,aiSettingsError} from './system-config.js';
 import {publicEngine} from './ai-policy.js';
 
 export const isAdmin=user=>user.system_role==='admin'&&!user.disabled;
@@ -62,7 +63,9 @@ async function userMemberships(env,userId){const list=await rows(env,'SELECT p.i
 export async function adminRoute(req,env,ctx,{user,session,url}){
  requireAdmin(user);const method=req.method,path=url.pathname.slice('/api/admin'.length)||'/';
  await requireAdminFactor(env,user,session);
- if(method==='POST'){requireReauth(session);requireFreshFactor(user,session);}
+ // AI connection settings use the authenticated admin session, not another password/MFA prompt.
+ const aiConfigurationWrite=method==='POST'&&['/ai-settings','/ai-settings/test'].includes(path);
+ if(method==='POST'&&!aiConfigurationWrite){requireReauth(session);requireFreshFactor(user,session);}
  const ops=await operationsAdminRoute(req,env,ctx,{user,session,url});if(ops)return ops;
  if(path==='/overview'&&method==='GET'){
   const userCounts=await one(env,"SELECT COUNT(*) AS total,SUM(disabled=1) AS disabled,SUM(system_role='admin' AND disabled=0) AS admins,SUM(must_change_password=1) AS passwordChangesRequired FROM users");
@@ -70,7 +73,7 @@ export async function adminRoute(req,env,ctx,{user,session,url}){
   const jobs=await rows(env,'SELECT status,COUNT(*) AS count FROM ai_jobs GROUP BY status');
   const notifications=await rows(env,'SELECT status,COUNT(*) AS count FROM outbox GROUP BY status');
   let ai;try{ai=await aiSettingsView(env);}catch(e){ai={engine:{configured:false,error:e.message}};}
-  return json({version:'1.3.0',userCounts,projectCounts,jobs,notifications,aiConfigured:ai.enabled&&ai.keyConfigured,
+  return json({version:'1.4.1',userCounts,projectCounts,jobs,notifications,aiConfigured:ai.enabled&&ai.keyConfigured,
    diagnostics:{database:'reachable',filesBinding:!!env.FILES,configurationEncryption:!!env.CONFIG_ENCRYPTION_KEY,notifyQueue:!!env.NOTIFY_QUEUE,
     aiConfiguration:ai.engine?.error||'',note:'绑定存在不等于云端服务已验收；备份需同时包含D1及私有R2。'}});
  }
@@ -182,30 +185,17 @@ export async function adminRoute(req,env,ctx,{user,session,url}){
  if(path==='/ai-settings'&&method==='GET')return json(await aiSettingsView(env));
  if(path==='/ai-settings'&&method==='POST'){
   const a=await body(req),reason=reasonOf(a);
-  await siteChange(env,user,keyOf(req),{...a,action:'ai.settings'},async({condition,guarded})=>{
+  try{await siteChange(env,user,keyOf(req),{...a,action:'ai.settings'},async({condition,guarded})=>{
    const previous=await readAiConfig(env),c=validateAiSettings(env,a,previous,now());
    return {target:'system-ai',result:{ok:true,revision:c.revision},details:{reason,revision:c.revision,provider:c.provider,baseUrl:c.baseUrl,model:c.model,enabled:c.enabled,keyAction:a.key?'replaced':a.clearKey?'cleared':'retained'},
     statements:[guarded('INSERT INTO settings(key,value) SELECT ?,? WHERE '+condition+' ON CONFLICT(key) DO UPDATE SET value=excluded.value',AI_CONFIG_KEY,JSON.stringify(c))]};
-  });return json(await aiSettingsView(env));
+  });return json(await aiSettingsView(env));}catch(error){throw aiSettingsError(error,'save');}
  }
  if(path==='/ai-settings/test'&&method==='POST'){
   const a=await body(req);assert(a.confirmCost===true,'测试会调用模型且可能计费，需明确确认');await rateLimit(env,'admin-model-test',5,3600);
   const resolved=await resolveAiEnv(env),engine=publicEngine(resolved);assert(engine.configured,engine.error||'请先保存有效的AI配置',503);
   const settings=await aiSettingsView(env);assert(a.expectedRevision===settings.revision,'配置已变化，请刷新后再测试',409);
-  // A generic tiny probe contains no project or user information and requests no tools.
-  const headers={'Content-Type':'application/json'},data={model:engine.model};let endpoint;
-  if(engine.provider==='anthropic'){endpoint=engine.baseUrl+'/messages';headers['x-api-key']=resolved.AI_API_KEY;headers['anthropic-version']='2023-06-01';Object.assign(data,{max_tokens:128,messages:[{role:'user',content:'Reply with the word OK. This is a connection test with no business data.'}]});}
-  else{endpoint=engine.baseUrl+'/chat/completions';headers.Authorization='Bearer '+resolved.AI_API_KEY;Object.assign(data,{max_completion_tokens:128,messages:[{role:'user',content:'Reply with the word OK. This is a connection test with no business data.'}]});}
-  const fetcher=env.AI_TEST_FETCH||fetch;let result;
-  try{
-   const response=await fetcher(endpoint,{method:'POST',headers,body:JSON.stringify(data),signal:AbortSignal.timeout(10000),redirect:'error'});
-   const reader=response.body?.getReader();let length=0;const chunks=[];
-   if(reader)while(true){const {value,done}=await reader.read();if(done)break;length+=value.length;if(length>65536){await reader.cancel();throw Error('oversized');}chunks.push(value);}
-   let value;try{value=JSON.parse(await new Blob(chunks).text());}catch{value=null;}
-   const content=engine.provider==='anthropic'?value?.content?.find(x=>x.type==='text')?.text:value?.choices?.[0]?.message?.content;
-   const ok=response.ok&&typeof content==='string'&&content.trim().length>0;
-   result={ok,httpStatus:response.status,message:ok?'已收到模型文本响应；仅验证鉴权及基础接口，不代表正式分析质量或结构化输出已验收。':`未获得有效文本响应（HTTP ${response.status}）；请核对模型、权限和协议。未展示服务商原始内容。`,usageKnown:!!value?.usage};
-  }catch{result={ok:false,message:'请求失败或超时，服务商是否计费不确定；不会自动重试。',usageKnown:false};}
+  const result=await probeProvider(resolved,engine);
   await adminAuditStatement(env,user,'ai.connection_test','system-ai',{provider:engine.provider,model:engine.model,revision:settings.revision,...result}).run();
   return json(result);
  }

@@ -162,8 +162,8 @@ test('项目生命周期与项目角色会签',async t=>{
 test('管理员AI配置：加密、透明授权、费用确认及过期任务',async t=>{
  const f=await fixture({partners:2});try{
  let current;
- await t.test('URL和Key输入校验，不能使用本地IP或最终接口地址',async()=>{
-  for(const baseUrl of ['http://localhost:8080','https://127.0.0.1/v1','https://169.254.169.254/v1','https://api.openai.com/v1/chat/completions','https://api.openai.com/v1?key=secret']){
+ await t.test('URL和Key输入校验，不能使用本地IP或带密钥参数的地址',async()=>{
+  for(const baseUrl of ['http://localhost:8080','https://127.0.0.1/v1','https://169.254.169.254/v1','https://api.openai.com/v1?key=secret']){
    const r=await f.owner.request('/api/admin/ai-settings',{method:'POST',data:aiConfig({baseUrl,confirmExternalHost:true})});assert.equal(r.status,400,baseUrl);
   }
  });
