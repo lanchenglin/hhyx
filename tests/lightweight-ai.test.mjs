@@ -23,7 +23,7 @@ async function setup(options={}){
 }
 async function use(fn,options){const f=await setup(options);try{await fn(f);}finally{await f.close();}}
 
-test('简化连接配置无需价格和输出参数；密钥仍只在管理员端加密管理',()=>use(async f=>{
+test('简化连接配置无需价格和输出参数；密钥明文存库但不回显且仅管理员可管理',()=>use(async f=>{
  assert.equal(publicEngine(f.rt.env).configured,true);
  const payload={enabled:true,provider:'openai_compatible',baseUrl:'https://api.openai.com/v1',model:'model-without-price',key:'synthetic-key-only-for-tests',expectedRevision:0,reason:'使用精简配置'};
  assert.equal((await f.all[1].request('/api/admin/ai-settings',{method:'POST',data:payload})).status,403);
@@ -31,7 +31,7 @@ test('简化连接配置无需价格和输出参数；密钥仍只在管理员�
  assert.equal(c.keyConfigured,true);assert.equal(c.engine.configured,true);assert.equal(c.inputCentsPerMillion,undefined);assert.equal(c.outputTokens,undefined);
  assert.ok(!JSON.stringify(c).includes(payload.key));assert.equal(f.calls.length,0);
  const stored=JSON.parse(f.rt.db.prepare("SELECT value FROM settings WHERE key='admin_ai_config'").get().value);
- assert.ok(stored.keyEncrypted&&!JSON.stringify(stored).includes(payload.key));
+ assert.equal(stored.key,payload.key);assert.equal(stored.keyEncrypted,undefined);
  assert.ok(c.prompts.core.includes('AI漫剧'));assert.deepEqual(Object.keys(c.prompts.tasks),['project','purchase','stage']);
 }));
 

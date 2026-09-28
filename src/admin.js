@@ -184,10 +184,10 @@ export async function adminRoute(req,env,ctx,{user,session,url}){
  }
  if(path==='/ai-settings'&&method==='GET')return json(await aiSettingsView(env));
  if(path==='/ai-settings'&&method==='POST'){
-  const a=await body(req),reason=reasonOf(a);
+  const a=await body(req);
   try{await siteChange(env,user,keyOf(req),{...a,action:'ai.settings'},async({condition,guarded})=>{
    const previous=await readAiConfig(env),c=validateAiSettings(env,a,previous,now());
-   return {target:'system-ai',result:{ok:true,revision:c.revision},details:{reason,revision:c.revision,provider:c.provider,baseUrl:c.baseUrl,model:c.model,enabled:c.enabled,keyAction:a.key?'replaced':a.clearKey?'cleared':'retained'},
+   return {target:'system-ai',result:{ok:true,revision:c.revision},details:{revision:c.revision,provider:c.provider,baseUrl:c.baseUrl,model:c.model,enabled:c.enabled,keyAction:a.key?'replaced':a.clearKey?'cleared':'retained'},
     statements:[guarded('INSERT INTO settings(key,value) SELECT ?,? WHERE '+condition+' ON CONFLICT(key) DO UPDATE SET value=excluded.value',AI_CONFIG_KEY,JSON.stringify(c))]};
   });return json(await aiSettingsView(env));}catch(error){throw aiSettingsError(error,'save');}
  }

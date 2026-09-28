@@ -8,7 +8,7 @@ import {randomBytes} from 'node:crypto';
 import worker from '../src/index.js';
 import {runtime} from '../scripts/local-runtime.mjs';
 import {fixture,PASSWORD} from './helpers.mjs';
-import {hashPassword,verifyPassword,decrypt} from '../src/util.js';
+import {hashPassword,verifyPassword} from '../src/util.js';
 import {one,load} from '../src/store.js';
 import {ensureInitialAdmin} from '../src/auth.js';
 import {resolveAiEnv} from '../src/system-config.js';
@@ -159,7 +159,7 @@ test('项目生命周期与项目角色会签',async t=>{
  }finally{await f.close();}
 });
 
-test('管理员AI配置：加密、透明授权、费用确认及过期任务',async t=>{
+test('管理员AI配置：明文存储、透明授权、费用确认及过期任务',async t=>{
  const f=await fixture({partners:2});try{
  let current;
  await t.test('URL和Key输入校验，不能使用本地IP或带密钥参数的地址',async()=>{
@@ -167,10 +167,10 @@ test('管理员AI配置：加密、透明授权、费用确认及过期任务',a
    const r=await f.owner.request('/api/admin/ai-settings',{method:'POST',data:aiConfig({baseUrl,confirmExternalHost:true})});assert.equal(r.status,400,baseUrl);
   }
  });
- await t.test('保存Key加密，不向任何读接口和日志回显；保存不调用模型',async()=>{
+ await t.test('保存Key明文，不向任何读接口和日志回显；保存不调用模型',async()=>{
   let calls=0;f.rt.env.AI_FETCH=async()=>{calls++;throw Error('unexpected');};
   current=await f.owner.ok('/api/admin/ai-settings',aiConfig());assert.equal(calls,0);assert.equal(current.keyConfigured,true);assert.ok(!JSON.stringify(current).includes('mock-admin-key-not-real'));
-  const record=JSON.parse((await one(f.rt.env,"SELECT value FROM settings WHERE key='admin_ai_config'")).value);assert.ok(!JSON.stringify(record).includes('mock-admin-key-not-real'));assert.equal(decrypt(record.keyEncrypted,f.rt.env.CONFIG_ENCRYPTION_KEY),'mock-admin-key-not-real');
+  const record=JSON.parse((await one(f.rt.env,"SELECT value FROM settings WHERE key='admin_ai_config'")).value);assert.equal(record.key,'mock-admin-key-not-real');assert.equal(record.keyEncrypted,undefined);
   const resolved=await resolveAiEnv(f.rt.env);assert.equal(resolved.AI_API_KEY,'mock-admin-key-not-real');assert.equal(publicEngine(resolved).model,'test-model');
   const audit=await f.owner.ok('/api/admin/audit',undefined,'GET');assert.ok(!JSON.stringify(audit).includes('mock-admin-key-not-real'));
  });

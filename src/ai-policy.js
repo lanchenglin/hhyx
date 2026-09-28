@@ -48,9 +48,8 @@ export function publicEngine(env) {
   const provider = env.AI_PROVIDER || 'openai_compatible';
   assert(['openai_compatible','anthropic'].includes(provider), 'AI_PROVIDER 仅支持 openai_compatible 或 anthropic');
   const u = new URL(normalizeAiUrl(env.AI_BASE_URL || (provider === 'anthropic' ? 'https://api.anthropic.com/v1' : 'https://api.openai.com/v1'),provider));
-  const allowed = new Set(['api.openai.com', 'api.anthropic.com', ...String(env.AI_ALLOWED_HOSTS || '').split(',').map(x=>x.trim()).filter(Boolean)]);
   assert(u.protocol === 'https:' && !u.username && !u.password && !u.search && !u.hash && (!u.port || u.port === '443'), '模型地址必须为无鉴权参数的 HTTPS API 基址');
-  assert(allowed.has(u.hostname) && /^[a-zA-Z0-9][a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(u.hostname) && !/(^|\.)(localhost|local|internal|test|invalid)$/.test(u.hostname), '模型域名未获服务端允许；第三方端点需配置 AI_ALLOWED_HOSTS');
+  assert(u.hostname.length<=253 && /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(u.hostname) && !/(^|\.)(localhost|local|internal|intranet|lan|home|corp|test|invalid|onion|arpa)$/.test(u.hostname), '模型地址须为公开域名，不允许IP、本地或内网域名');
   assert(!u.pathname.includes('//') && !/%/.test(u.pathname), 'API 基址路径不正确');
   const model = text(env.AI_MODEL, 'AI_MODEL', 120);
   assert(/^[a-zA-Z0-9._:/-]+$/.test(model), '模型标识格式不正确');

@@ -2,14 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fixture,PASSWORD} from './helpers.mjs';
 import {publicEngine} from '../src/ai-policy.js';
-import {resolveAiEnv,aiSettingsError,aiEncryptionState} from '../src/system-config.js';
+import {resolveAiEnv,aiSettingsError} from '../src/system-config.js';
 import {normalizeAiUrl,providerHttpMessage} from '../src/ai-transport.js';
 import {requestSpec,invokeProvider,probeProvider} from '../src/ai-provider.js';
 import {one,rows} from '../src/store.js';
 import {totp} from '../src/mfa.js';
 const host='relay.example.com';
-const env={AI_PROVIDER:'openai_compatible',AI_BASE_URL:`https://${host}/v1`,AI_MODEL:'deepseek-flash',AI_ALLOWED_HOSTS:host,AI_API_KEY:'synthetic-key-not-real'};
-const config=(extra={})=>({provider:'openai_compatible',baseUrl:env.AI_BASE_URL,model:env.AI_MODEL,key:env.AI_API_KEY,enabled:true,confirmExternalHost:true,expectedRevision:0,reason:'Synthetic relay config test',...extra});
+const env={AI_PROVIDER:'openai_compatible',AI_BASE_URL:`https://${host}/v1`,AI_MODEL:'deepseek-flash',AI_API_KEY:'synthetic-key-not-real'};
+const config=(extra={})=>({provider:'openai_compatible',baseUrl:env.AI_BASE_URL,model:env.AI_MODEL,key:env.AI_API_KEY,enabled:true,expectedRevision:0,...extra});
 const reply={verdict:'needs_information',summary:'合成测试报告',summaryRefs:['project'],findings:[],missingInformation:[],recommendations:[],decisions:[],limitations:['未联网核查'],externalVerified:false};
 const snapshot={kind:'project',sources:[{id:'project',data:{name:'合成测试'}}]};
 const response=()=>Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(reply)}}],usage:{prompt_tokens:20,completion_tokens:80}});
@@ -29,7 +29,7 @@ test('relay uses max_tokens and prompt JSON; official/explicit modern remains st
  const json=publicEngine({...env,AI_JSON_MODE:'json_object'});assert.equal(requestSpec(json,snapshot,'test').body.response_format.type,'json_object');
  assert.equal(publicEngine({...env,AI_REQUEST_MODE:'invalid'}).configured,false);
  assert.equal(publicEngine({...env,AI_BASE_URL:'https://127.0.0.1/v1',AI_ALLOWED_HOSTS:'127.0.0.1'}).configured,false);
- assert.equal(publicEngine({...env,AI_BASE_URL:'https://other.example.com/v1'}).configured,false);
+ assert.equal(publicEngine({...env,AI_BASE_URL:'https://other.example.com/v1'}).configured,true);
 });
 test('relay successful output still validates report references; probe and report share transport fields',async()=>{
  let calls=0,probeBody;
@@ -80,11 +80,11 @@ test('completed MFA login stays usable for AI settings after step-up expires; in
   assert.equal(enabled.recoveryCodes.length,10);
  }finally{await f.close();}
 });
-test('invalid root encryption reports distinct error; database faults carry safe diagnostic id',async()=>{
+test('invalid root encryption does not block new AI keys; database faults carry safe diagnostic id',async()=>{
  const f=await fixture({partners:2,activate:false,fund:false});try{
-  f.rt.env.CONFIG_ENCRYPTION_KEY='invalid';assert.equal(aiEncryptionState(f.rt.env).encryptionReady,false);
-  const r=await f.owner.request('/api/admin/ai-settings',{method:'POST',data:config()});assert.equal(r.status,503);assert.equal(r.body.code,'AI_ENCRYPTION_NOT_READY');assert.ok(!JSON.stringify(r.body).includes(env.AI_API_KEY));
-  assert.equal(await one(f.rt.env,"SELECT value FROM settings WHERE key='admin_ai_config'"),null);
+  f.rt.env.CONFIG_ENCRYPTION_KEY='invalid';
+  const r=await f.owner.request('/api/admin/ai-settings',{method:'POST',data:config()});assert.equal(r.status,200);assert.ok(!JSON.stringify(r.body).includes(env.AI_API_KEY));
+  assert.equal(JSON.parse((await one(f.rt.env,"SELECT value FROM settings WHERE key='admin_ai_config'")).value).key,env.AI_API_KEY);
   const a=aiSettingsError(new Error('no such table: settings; '+env.AI_API_KEY));assert.equal(a.code,'AI_DATABASE_NOT_READY');assert.ok(!a.message.includes(env.AI_API_KEY));assert.match(a.message,/诊断编号/);
   const b=aiSettingsError(new Error('private error '+env.AI_API_KEY));assert.equal(b.code,'AI_CONFIG_STORAGE_ERROR');assert.ok(!b.message.includes(env.AI_API_KEY));
  }finally{await f.close();}

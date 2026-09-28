@@ -134,8 +134,9 @@ test('AI纯函数防护及确定性测算',async t=>{
   assert.equal(scenarioMath(large).collectedCents,Number(BigInt(large.units)*BigInt(large.priceCents)*7777n/10000n));
   assert.throws(()=>scenarioMath({...large,units:100000000,unitCostCents:90071992,fixedCostCents:100000000}),/精度/);
  });
- await t.test('拒绝未经许可的端点；缺失价格不影响配置',()=>{
-  for(const baseUrl of ['http://localhost:123','https://127.0.0.1','https://user:pass@api.openai.com/v1','https://api.openai.com/v1?token=secret','https://evil.example/v1'])assert.equal(publicEngine({...envConfig,AI_BASE_URL:baseUrl}).configured,false);
+ await t.test('拒绝不安全端点但不要求域名白名单；缺失价格不影响配置',()=>{
+  for(const baseUrl of ['http://localhost:123','https://127.0.0.1','https://user:pass@api.openai.com/v1','https://api.openai.com/v1?token=secret'])assert.equal(publicEngine({...envConfig,AI_BASE_URL:baseUrl}).configured,false);
+  assert.equal(publicEngine({...envConfig,AI_BASE_URL:'https://gateway.example.com/v1'}).configured,true);
   assert.equal(publicEngine({...envConfig,AI_INPUT_CENTS_PER_MILLION:''}).configured,true);
  });
  await t.test('OpenAI兼容与Anthropic请求协议各自正确，且没有工具权限',()=>{

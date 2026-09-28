@@ -25,7 +25,7 @@ export function createAdminUI({S,e,api,reauth,showForm,showInfo,render,btn,panel
   if(tab==='overview'){
    const u=data.userCounts||{},counts=Object.fromEntries((data.projectCounts||[]).map(x=>[x.lifecycle,x.count]));
    html+=`<div class="metrics">${card('系统用户',u.total||0,`${u.admins||0} 位有效管理员 · ${u.disabled||0} 个停用账号`)}${card('正常项目',counts.active||0,'按原有规则分工与会签')}${card('归档 / 回收站',`${counts.archived||0} / ${counts.trashed||0}`,'删除为逻辑删除，历史数据保留')}${card('外部 AI',data.aiConfigured?'已配置':'待配置','保存配置不会调用模型或自动授权项目')}</div>`;
-   html+=panel('运行状态',`<div class="panel-body"><dl class="kv"><dt>数据库</dt><dd>${e(data.diagnostics.database)}</dd><dt>私有文件存储绑定</dt><dd>${data.diagnostics.filesBinding?'已绑定，仍需验收':'未绑定'}</dd><dt>配置加密密钥</dt><dd>${data.diagnostics.configurationEncryption?'已设置':'未设置，不能保存AI Key'}</dd><dt>通知队列</dt><dd>${data.diagnostics.notifyQueue?'已绑定':'未绑定，使用定时处理'}</dd><dt>AI配置提示</dt><dd>${e(data.diagnostics.aiConfiguration||'无配置错误')}</dd></dl><p class="muted">${e(data.diagnostics.note)}</p></div>`);
+   html+=panel('运行状态',`<div class="panel-body"><dl class="kv"><dt>数据库</dt><dd>${e(data.diagnostics.database)}</dd><dt>私有文件存储绑定</dt><dd>${data.diagnostics.filesBinding?'已绑定，仍需验收':'未绑定'}</dd><dt>配置加密密钥</dt><dd>${data.diagnostics.configurationEncryption?'已设置':'未设置，影响MFA、通知及旧密文读取'}</dd><dt>通知队列</dt><dd>${data.diagnostics.notifyQueue?'已绑定':'未绑定，使用定时处理'}</dd><dt>AI配置提示</dt><dd>${e(data.diagnostics.aiConfiguration||'无配置错误')}</dd></dl><p class="muted">${e(data.diagnostics.note)}</p></div>`);
    html+=`<div class="grid-2">${panel('AI任务状态',`<div class="panel-body">${(data.jobs||[]).map(x=>`<p>${e(x.status)}：${x.count}</p>`).join('')||'<p>暂无任务</p>'}</div>`)}${panel('通知投递状态',`<div class="panel-body">${(data.notifications||[]).map(x=>`<p>${e(x.status)}：${x.count}</p>`).join('')||'<p>暂无通知投递</p>'}</div>`)}</div>`;
    html+=`<div class="alert info">备份不是一个“成功”按钮：完整备份需要数据库、私有附件以及安全保存的加密密钥。此页面仅展示运行指标，没有替你创建云端备份。</div>`;
   }
@@ -40,8 +40,8 @@ export function createAdminUI({S,e,api,reauth,showForm,showInfo,render,btn,panel
    html+='<div class="alert info">系统管理员身份不等于项目合伙人。停用用户不会删除他的历史意见或从必签名单中移除；在办事项可能因此等待处理。</div>';
   }
   if(tab==='ai'){
-   html+=panel('AI 服务连接配置',`<div class="panel-body"><dl class="kv"><dt>配置来源</dt><dd>${data.source==='database'?'管理员后台配置':'部署环境变量（尚未在后台保存）'}</dd><dt>全站启用</dt><dd>${data.enabled?'已启用':'未启用'}</dd><dt>API Key</dt><dd>${data.keyConfigured?'已保存 · 不回显原值':'未配置'}</dd><dt>接口协议</dt><dd>${e(data.provider)}</dd><dt>API URL</dt><dd class="admin-wrap">${e(data.baseUrl)}</dd><dt>Model</dt><dd class="admin-wrap">${e(data.model||'未配置')}</dd><dt>配置版本</dt><dd>${data.revision}</dd></dl><div class="buttons">${button('配置 Key / Model / URL','ai-edit','','primary')}${button('测试连接（可能计费）','ai-test','','small')}${button('内置分析提示词','ai-prompts','','small')}${button('补充分析偏好（可选）','ai-guidance','','small')}</div><p class="muted">Key只以加密形式保存在服务端，管理员也不能读取已存明文。普通成员没有此管理入口。</p></div>`);
-   if(!data.encryptionReady)html+=`<div class="alert bad">${e(data.encryptionIssue||'请先配置有效的CONFIG_ENCRYPTION_KEY，网页不能替换已有加密根密钥。')}</div>`;
+   html+=panel('AI 服务连接配置',`<div class="panel-body"><dl class="kv"><dt>配置来源</dt><dd>${data.source==='database'?'管理员后台配置':'部署环境变量（尚未在后台保存）'}</dd><dt>全站启用</dt><dd>${data.enabled?'已启用':'未启用'}</dd><dt>API Key</dt><dd>${data.keyConfigured?'已保存 · 不回显原值':'未配置'}</dd><dt>接口协议</dt><dd>${e(data.provider)}</dd><dt>API URL</dt><dd class="admin-wrap">${e(data.baseUrl)}</dd><dt>Model</dt><dd class="admin-wrap">${e(data.model||'未配置')}</dd><dt>配置版本</dt><dd>${data.revision}</dd></dl><div class="buttons">${button('配置 Key / Model / URL','ai-edit','','primary')}${button('测试连接（可能计费）','ai-test','','small')}${button('内置分析提示词','ai-prompts','','small')}${button('补充分析偏好（可选）','ai-guidance','','small')}</div><p class="muted">新的AI Key以明文保存在D1，页面和API不回显。拥有数据库读取权限或数据库导出副本的人可以读取Key，请限制访问并加密保管导出。普通成员没有此管理入口。</p></div>`);
+   if(data.keyStorage==='legacy-encrypted')html+='<div class="alert warn">当前Key仍为旧密文，调用需要原CONFIG_ENCRYPTION_KEY。保存时可解密则迁移为明文，否则保留旧密文；可填写新Key替换。不要重置根密钥，MFA和通知等仍依赖它。</div>';
    html+='<div class="alert info">保存不会发起模型调用。只需配置URL、Model和Key，无须填写价格或输出长度。提示词已内置，默认简短且通用。修改配置后项目须重新全员确认；用量不代表账单。</div>';
   }
   if(tab==='audit')html+=panel('管理员操作日志',`<div class="panel-body">${data.records.map(x=>`<article class="comment"><div class="comment-meta"><span>#${x.sequence} · ${e(x.actor_name)}</span><time>${shortDate(x.created_at)}</time></div><strong>${e(x.action)}</strong><p class="admin-wrap">对象：${e(x.target_id||'系统')}</p><pre class="admin-json">${e(JSON.stringify(x.details,null,2))}</pre></article>`).join('')||'<p>暂无管理操作记录。</p>'}</div>`)+pager()+'<p class="muted">日志为应用层只追加记录，不是第三方不可篡改存证。用户密码、API Key不会写入日志。</p>';
@@ -108,16 +108,14 @@ export function createAdminUI({S,e,api,reauth,showForm,showInfo,render,btn,panel
   if(name==='admin-ai-edit'){
    const c=await api(base+'/ai-settings');
    showForm('AI模型配置（仅系统管理员）',[
-    ...(!c.encryptionReady?[{name:'encryptionNotice',type:'html',full:true,html:`<div class="alert bad">${e(c.encryptionIssue||'请先配置服务端CONFIG_ENCRYPTION_KEY，否则无法加密保存新的API Key。')}</div>`}]:[]),
     {name:'enabled',label:'全站启用外部AI',type:'checkbox',value:c.enabled,full:true},
     {name:'provider',label:'API协议',type:'select',options:[['openai_compatible','OpenAI兼容／中转站 Chat Completions'],['anthropic','Anthropic Messages']],value:c.provider,full:true},
     {name:'baseUrl',label:'API URL（支持中转站）',value:c.baseUrl,full:true,maxLength:500,help:'可填域名、含 /v1 的基址，或完整 /chat/completions 地址；系统会规范路径。自定义路径按服务商说明填写。'},
     {name:'model',label:'Model（真实模型ID）',value:c.model,full:true,maxLength:120},
     {name:'key',label:c.keyConfigured?'替换 API Key（留空保留原值）':'API Key',type:'password',required:false,full:true,maxLength:8192,autocomplete:'off'},
-    {name:'clearKey',label:'清除已保存Key（须同时关闭AI）',type:'checkbox',full:true},
-    {name:'confirmExternalHost',label:'确认第三方接收方',type:'checkbox',full:true,checkboxText:'如使用第三方网关，我已核对域名与数据处理方式，同意将其加入本应用允许名单'},fieldReason
-   ],async a=>{await save('/ai-settings',{...a,enabled:!!a.enabled,clearKey:!!a.clearKey,confirmExternalHost:!!a.confirmExternalHost,expectedRevision:c.revision});await refresh();toast(a.enabled?'配置已加密保存并启用；项目需重新确认AI规则，未调用模型':'配置已加密保存，但全站AI仍关闭；需勾选启用后才能分析');},
-   {intro:'支持中转站API，已登录管理员可直接保存，不再重复输入密码或验证码。已有Key不回显；未勾选启用只保存配置。保存不会调用模型，配置变更后项目须重新确认。',submit:'加密保存配置'});return;
+    {name:'clearKey',label:'清除已保存Key（须同时关闭AI）',type:'checkbox',full:true}
+   ],async a=>{await save('/ai-settings',{...a,enabled:!!a.enabled,clearKey:!!a.clearKey,expectedRevision:c.revision});await refresh();toast(a.enabled?'配置已保存并启用；项目需重新确认AI规则，未调用模型':'配置已保存，但全站AI仍关闭；需勾选启用后才能分析');},
+   {intro:'支持中转站API，已登录管理员可直接保存，不再重复输入密码或验证码。新Key以明文存入D1，数据库及导出副本可暴露Key；已有Key不回显。仅接受公开HTTPS地址，请自行核实接收方可信度。未勾选启用只保存配置，不调用模型，配置变更后项目须重新确认。',submit:'保存配置'});return;
   }
   if(name==='admin-ai-prompts'){
    const c=await api(base+'/ai-settings'),p=c.prompts;
@@ -125,8 +123,8 @@ export function createAdminUI({S,e,api,reauth,showForm,showInfo,render,btn,panel
   }
   if(name==='admin-ai-guidance'){
    const c=await api(base+'/ai-settings');
-   showForm('补充分析偏好（可留空）',[{name:'analysisGuidance',label:'例如：优先关注制作时间和返工，不必假设有客户或库存',type:'textarea',full:true,required:false,maxLength:2000,value:c.analysisGuidance||''},fieldReason],async a=>{
-    await save('/ai-settings',{enabled:c.enabled,provider:c.provider,baseUrl:c.baseUrl,model:c.model,analysisGuidance:a.analysisGuidance,reason:a.reason,expectedRevision:c.revision});await refresh();toast('补充偏好已保存；原提示词核心规则不变，项目需重新确认');
+   showForm('补充分析偏好（可留空）',[{name:'analysisGuidance',label:'例如：优先关注制作时间和返工，不必假设有客户或库存',type:'textarea',full:true,required:false,maxLength:2000,value:c.analysisGuidance||''}],async a=>{
+    await save('/ai-settings',{enabled:c.enabled,provider:c.provider,baseUrl:c.baseUrl,model:c.model,analysisGuidance:a.analysisGuidance,expectedRevision:c.revision});await refresh();toast('补充偏好已保存；原提示词核心规则不变，项目需重新确认');
    },{intro:'默认内置通用提示词已可直接使用。不要填写密钥或隐私；补充内容只能影响关注重点，不能赋予AI审批权。'});return;
   }
   if(name==='admin-ai-test'){

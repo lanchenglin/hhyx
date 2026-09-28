@@ -19,7 +19,7 @@ MOCK=r'''f=>{
   if(options.method&&options.method!=='GET'){
    const body=JSON.parse(options.body||'{}');writes.push({path,body});
    if(path==='/api/admin/ai-settings'){
-    if(failSave){failSave=false;return Response.json({error:'服务端CONFIG_ENCRYPTION_KEY缺失或格式错误，请联系部署者核对。',code:'AI_ENCRYPTION_NOT_READY'},{status:503});}
+    if(failSave){failSave=false;return Response.json({error:'AI配置读取或保存未完成，请核对D1。诊断编号：synthetic-only',code:'AI_CONFIG_STORAGE_ERROR'},{status:503});}
     const next={...r[path],...body,keyConfigured:true,revision:r[path].revision+1};delete next.key;r[path]=next;return Response.json(next);
    }
    if(path==='/api/admin/ai-settings/test')return Response.json({ok:false,httpStatus:401,message:'API Key无效或已过期，请核对中转站密钥（HTTP 401）。不会自动重试。'});
@@ -47,13 +47,13 @@ with sync_playwright() as pw:
   assert d.evaluate('d=>d.scrollWidth<=d.clientWidth+1')
   checks.append(f'{width}px: relay explanation and masked key, disabled state and no overflow')
   d.locator('[name=key]').fill('Synthetic-relay-key-123!');d.locator('[name=reason]').fill('合成配置，不发送真实请求')
-  p.evaluate('failSave=true');d.get_by_role('button',name='加密保存配置').click();d.locator('.field-error').wait_for()
+  p.evaluate('failSave=true');d.get_by_role('button',name='保存配置').click();d.locator('.field-error').wait_for()
   assert 'CONFIG_ENCRYPTION_KEY' in d.locator('.field-error').inner_text()
   assert d.locator('[name=key]').get_attribute('type')=='password'
   assert not p.evaluate('writes.some(x=>x.path.includes("reauth")||x.path.includes("mfa"))')
   checks.append(f'{width}px: save failure is actionable, no password/MFA prompt, key remains masked')
   if width==390:p.screenshot(path=str(OUT/'relay-390-settings.png'),full_page=True)
-  d.get_by_role('button',name='加密保存配置').click();p.wait_for_function('!document.querySelector("#modal").open')
+  d.get_by_role('button',name='保存配置').click();p.wait_for_function('!document.querySelector("#modal").open')
   assert p.evaluate('fx.responses["/api/admin/ai-settings"].enabled') is False
   p.wait_for_function('document.querySelector("#modal [name=key]").value===""')
   assert not p.evaluate('writes.some(x=>x.path.endsWith("/test"))')

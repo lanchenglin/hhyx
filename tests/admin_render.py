@@ -106,7 +106,8 @@ with sync_playwright() as pw:
             tab(p,'overview');p.screenshot(path=str(OUT/f'admin-{width}-overview.png'),full_page=True)
         ctx.close()
     ctx,p=mount(b,390);admin(p);tab(p,'ai');p.locator('[data-action="admin-ai-edit"]').click();d=sheet(p,'保存配置')
-    d.locator('[name="reason"]').fill('虚构测试配置更新');d.locator('[name="key"]').fill('Synthetic-config-key-234!');d.get_by_role('button',name='加密保存配置').click()
+    assert d.locator('[name="reason"], [name="confirmExternalHost"]').count()==0
+    d.locator('[name="key"]').fill('Synthetic-config-key-234!');d.get_by_role('button',name='保存配置').click()
     p.wait_for_function('writes.some(x=>x.path==="/api/admin/ai-settings")');p.wait_for_function('!document.querySelector("#modal").open')
     payload=p.evaluate('writes.find(x=>x.path==="/api/admin/ai-settings").body');assert 'inputCentsPerMillion' not in payload and 'outputCentsPerMillion' not in payload and 'outputTokens' not in payload and payload['expectedRevision']==1
     assert not p.evaluate('writes.some(x=>x.path.endsWith("/ai-settings/test"))');assert p.locator('#modal [name="key"]').input_value()==''
