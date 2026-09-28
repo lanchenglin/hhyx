@@ -81,7 +81,8 @@ export async function invokeProvider(env,engine,snapshot,continuation='') {
  const spec=requestSpec(engine,snapshot,env.AI_API_KEY,continuation),controller=new AbortController();
  const timer=setTimeout(()=>controller.abort(),20000);let usage=null;
  try {
-  const response=await (env.AI_FETCH||fetch)(spec.url,{method:'POST',headers:spec.headers,body:JSON.stringify(spec.body),redirect:'error',signal:controller.signal});
+  const response=await (env.AI_FETCH||fetch)(spec.url,{method:'POST',headers:spec.headers,body:JSON.stringify(spec.body),redirect:'manual',signal:controller.signal});
+  if(response.status>=300&&response.status<400){await response.body?.cancel();return {status:'failed',errorCode:'PROVIDER_HTTP_'+response.status,error:'模型接口返回重定向，已拒绝跟随；请核对API地址。不会自动重试。',usage:null};}
   if(!response.ok){await response.body?.cancel();return {status:'failed',errorCode:'PROVIDER_HTTP_'+response.status,error:providerHttpMessage(response.status,{html:(response.headers.get('content-type')||'').includes('text/html')}),usage:null};}
   if((response.headers.get('content-type')||'').includes('text/html')){await response.body?.cancel();return {status:'failed',errorCode:'PROVIDER_HTML',error:providerHttpMessage(response.status,{html:true}),usage:null};}
   const payload=await boundedJson(response);usage=parseUsage(payload,engine);
@@ -120,7 +121,8 @@ export async function probeProvider(env,engine) {
  }
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
  try{
-  const response=await (env.AI_TEST_FETCH||fetch)(endpoint,{method:'POST',headers,body:JSON.stringify(data),signal:controller.signal,redirect:'error'});
+  const response=await (env.AI_TEST_FETCH||fetch)(endpoint,{method:'POST',headers,body:JSON.stringify(data),signal:controller.signal,redirect:'manual'});
+  if(response.status>=300&&response.status<400){await response.body?.cancel();return {ok:false,httpStatus:response.status,message:'模型接口返回重定向，已拒绝跟随；请核对API地址。不会自动重试。',usageKnown:false};}
   const html=(response.headers.get('content-type')||'').includes('text/html');
   if(!response.ok||html){await response.body?.cancel();return {ok:false,httpStatus:response.status,message:providerHttpMessage(response.status,{html}),usageKnown:false};}
   const value=await boundedJson(response);

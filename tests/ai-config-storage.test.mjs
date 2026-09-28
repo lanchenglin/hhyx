@@ -21,7 +21,7 @@ test('AI saves plaintext without root key, reason or host confirmation; APIs and
   assert.equal((await resolveAiEnv(f.rt.env)).AI_API_KEY,key);
   const view=await f.owner.ok('/api/admin/ai-settings',undefined,'GET');
   assert.equal(view.keyConfigured,true);assert.equal(view.keyStorage,'plaintext');
-  f.rt.env.AI_TEST_FETCH=async(url,opts)=>{assert.equal(opts.headers.Authorization,'Bearer '+key);assert.equal(opts.redirect,'error');return Response.json({choices:[{message:{content:'OK'}}]});};
+  f.rt.env.AI_TEST_FETCH=async(url,opts)=>{assert.equal(opts.headers.Authorization,'Bearer '+key);assert.equal(opts.redirect,'manual');return Response.json({choices:[{message:{content:'OK'}}]});};
   const probe=await f.owner.ok('/api/admin/ai-settings/test',{expectedRevision:1,confirmCost:true});assert.equal(probe.ok,true);
   assert.ok(!JSON.stringify([saved,view,probe,await rows(f.rt.env,'SELECT * FROM admin_audit'),await rows(f.rt.env,'SELECT * FROM admin_operations')]).includes(key));
  }finally{await f.close();}
