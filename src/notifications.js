@@ -1,3 +1,4 @@
+import {notificationFetch} from './notification-transport.js';
 import {validateWecomURL,resolveNotifyEnv,resolveWecom,reserveSms,adminAlert} from './notification-config.js';
 import { createHmac } from 'node:crypto';
 import { assert, decrypt, uid, now, sha } from './util.js';
@@ -16,7 +17,7 @@ async function sendWecom(env,row,fetcher) {
  const link=`${env.APP_URL}/#project=${encodeURIComponent(row.project_id)}&tab=notifications`;
  // 外部群只接收最小化提示，不包含账号、报价附件和详细财务信息。
  const content=`【合伙有序】${project?.name||'合作项目'}\n${row.title}\n请登录系统查看详情并处理；消息送达不代表同意。\n${link}`;
- const response=await fetcher(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({msgtype:'text',text:{content}}),signal:AbortSignal.timeout(10000),redirect:'error'});
+ const response=await notificationFetch(fetcher,endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({msgtype:'text',text:{content}}),signal:AbortSignal.timeout(10000)});
  const data=await response.json();if(response.ok&&data.errcode===0)return {status:'accepted',receipt:'wecom-api-accepted'};
  return {status:response.status>=500||data.errcode===45009?'retry':'failed',error:`企业微信拒绝：HTTP ${response.status} / ${Number(data.errcode)||'unknown'}`};
 }
@@ -29,7 +30,7 @@ async function sendSms(env,row,fetcher) {
  if(!project||!JSON.parse(project.state).members.some(m=>m.active&&m.userId===row.user_id))return {status:'disabled',error:'接收人不再是有效项目成员'};
  if(!await reserveSms(env,row.id,row.user_id))return {status:'failed',error:'达到短信日额度/个人小时限制，或该请求已预占，未再次发送'};
  const params={AccessKeyId:env.ALIYUN_ACCESS_KEY_ID,Action:'SendSms',Version:'2017-05-25',Format:'JSON',RegionId:'cn-hangzhou',SignatureMethod:'HMAC-SHA1',SignatureVersion:'1.0',SignatureNonce:uid(),Timestamp:now().replace(/\.\d{3}Z$/,'Z'),PhoneNumbers:user.phone,SignName:env.ALIYUN_SMS_SIGN_NAME,TemplateCode:env.ALIYUN_SMS_TEMPLATE_CODE,TemplateParam:JSON.stringify({project:project.name.slice(0,20),title:row.title.slice(0,20)}),OutId:sha(row.id).slice(0,32)};
- const response=await fetcher('https://dysmsapi.aliyuncs.com/',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:aliyunSignedParams(params,env.ALIYUN_ACCESS_KEY_SECRET),signal:AbortSignal.timeout(10000),redirect:'error'});
+ const response=await notificationFetch(fetcher,'https://dysmsapi.aliyuncs.com/',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:aliyunSignedParams(params,env.ALIYUN_ACCESS_KEY_SECRET),signal:AbortSignal.timeout(10000)});
  const data=await response.json();if(response.ok&&data.Code==='OK')return {status:'accepted',receipt:data.BizId||data.RequestId||''};
  // SendSms 没有幂等保证；5xx 也可能已发送，因此不自动重发。
  return {status:response.status>=500?'uncertain':'failed',error:`短信服务返回：${String(data.Code||response.status).slice(0,120)}`};
@@ -41,7 +42,7 @@ export async function deliverOne(env,id,fetcher=env.NOTIFY_TEST_FETCH||fetch) {
  const row=await one(env,'SELECT * FROM outbox WHERE id=?',id);let result;
  const projectStatus=await one(env,'SELECT lifecycle FROM projects WHERE id=?',row.project_id);
  if(!projectStatus||projectStatus.lifecycle!=='active'){await env.DB.prepare("UPDATE outbox SET status='disabled',error='项目已归档或进入回收站，停止外发通知',lease_until=0 WHERE id=? AND lease_token=?").bind(id,lease).run();return;}
- try{result=row.channel==='sms'?await sendSms(env,row,fetcher):await sendWecom(env,row,fetcher);}catch(e){result={status:row.channel==='sms'?'uncertain':'retry',error:row.channel==='sms'?'发送结果不确定；请核查回执后人工决定重发':'发送失败或超时，将有限重试'};}
+ try{result=row.channel==='sms'?await sendSms(env,row,fetcher):await sendWecom(env,row,fetcher);}catch(e){result=e.code==='NOTIFICATION_REDIRECT'?{status:'failed',error:e.message}:{status:row.channel==='sms'?'uncertain':'retry',error:row.channel==='sms'?'发送结果不确定；请核查回执后人工决定重发':'发送失败或超时，将有限重试'};}
  if(result.status==='retry'&&row.attempts>=5)result.status='failed';
  if(['uncertain','failed'].includes(result.status))await adminAlert(env,'notice:'+row.id,'通知投递需要检查',{outboxId:row.id,channel:row.channel,status:result.status});
  await env.DB.prepare('UPDATE outbox SET status=?,error=?,provider_receipt=?,sent_at=?,next_at=?,lease_until=0 WHERE id=? AND lease_token=?').bind(result.status,result.error||null,result.receipt||null,result.status==='accepted'?now():null,epoch+Math.min(3600,60*2**row.attempts),id,lease).run();

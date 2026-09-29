@@ -73,7 +73,7 @@ export async function adminRoute(req,env,ctx,{user,session,url}){
   const jobs=await rows(env,'SELECT status,COUNT(*) AS count FROM ai_jobs GROUP BY status');
   const notifications=await rows(env,'SELECT status,COUNT(*) AS count FROM outbox GROUP BY status');
   let ai;try{ai=await aiSettingsView(env);}catch(e){ai={engine:{configured:false,error:e.message}};}
-  return json({version:'1.4.1',userCounts,projectCounts,jobs,notifications,aiConfigured:ai.enabled&&ai.keyConfigured,
+  return json({version:'1.5.0',userCounts,projectCounts,jobs,notifications,aiConfigured:ai.enabled&&ai.keyConfigured,
    diagnostics:{database:'reachable',filesBinding:!!env.FILES,configurationEncryption:!!env.CONFIG_ENCRYPTION_KEY,notifyQueue:!!env.NOTIFY_QUEUE,
     aiConfiguration:ai.engine?.error||'',note:'绑定存在不等于云端服务已验收；备份需同时包含D1及私有R2。'}});
  }

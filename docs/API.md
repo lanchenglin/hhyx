@@ -196,3 +196,26 @@ MFA常见错误码：`MFA_REQUIRED`、`MFA_STEPUP_REQUIRED`、`MFA_SETUP_REQUIRE
 - `ai.run.progress` 与request/finish一样只允许内部验证服务使用，普通actions端点拒绝伪造。补齐仍检查身份、授权、输入和配置。
 - `purchase.save` 可选purpose（daily/content/software/promotion/outsourcing/equipment/goods/other）、commitmentGroup（同事项标签，最多100字符）、simpleForm。simpleForm=true必须单条数量1；必填原阶段、收款对象、付款安排及不同执行/验收人不取消。quote/risk/exitPlan可空，空值不是无风险。金额来自items，不信任客户端另外传的amount或分析判断。
 - GET项目的每张采购单包含后端派生analysisAssessment，列出阈值、自身/累计金额、相关ID及原因；派生判断不写回业务签名快照。自动调用只在有效授权范围内发生。
+
+
+## v1.5 监督与追加投入（原项目接口扩展，无新权限入口）
+
+`GET /api/projects/:id` 返回 `supervision`（保留资料）与 `supervisionView`（本次计算的总览、资金、期限、待办与异常）。普通成员仍仅能读自己的有效项目。
+
+`POST /api/projects/:id/actions` 新增：
+
+| type | 主要字段 | 权限／语义 |
+|---|---|---|
+| report.submit | kind=weekly/stage, stageId, fromDate, toDate, completed, evidence, problems?, nextSteps?, reviewerId, attachments?, fundingIds?, supersedesId? | 已加入可执行成员，启用规则后仅指定汇报人；不自动批准 |
+| report.read | id, contentHash | 本人对具体版本确认已阅，归档不写入 |
+| report.review | id, accept, note | 指定不同合伙人；只处理最新阶段成果，接受时核对依据哈希 |
+| funding.receipt | id, memberId, amountCents, evidence, attachments? | 合伙人登记真实来款，等待原ledger.verify独立复核 |
+| funding.link | id, memberId, entryId, evidence | 关联未重复使用的原来款，不增加现金 |
+| issue.create | sourceKey? 或 title/detail/severity, assigneeId, reviewerId, dueDate | 合伙人建单，处理人与复核人不同 |
+| issue.respond | id, cause, plan | 指定处理人说明原因与安排 |
+| issue.resolve | id, result, attachments? | 指定处理人提交结果，不自行关闭 |
+| issue.review | id, accept, disposition=resolved/accepted/false_positive, note | 指定不同合伙人复核，来源仍在不能标记已消除 |
+
+`proposal.submit` 新增 kind：`supervision_policy`、`plan_change`、`funding_request`、`funding_cancel`，具体字段见 `src/supervision.js` 的验证函数。全部沿用原冻结成员与全员会签。追加承担人在 `proposal.vote` 同意时必须另送 `acceptFunding:true`；服务端存入该人的决定。前端不能通过隐藏字段修改预算或冒充系统。
+
+`supervision.sync` 为内部定时服务专用操作，浏览器接口直接拒绝。幂等键、项目权限、原审批验证与审计仍生效。新视图中的 `informationStatus` 不应解读为AI结论或经营保证。

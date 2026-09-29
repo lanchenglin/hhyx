@@ -1,0 +1,15 @@
+
+ ⛅️ wrangler 4.143.0
+────────────────────
+✨ Read 13 files from the assets directory /tmp/hhyx-v150.6RdaRx/repo/public
+Total Upload: 382.79 KiB / gzip: 97.95 KiB
+Your Worker has access to the following bindings:
+Binding                                                Resource
+env.DB (coop-plan-db)                                  D1 Database
+env.FILES (coop-plan-private)                          R2 Bucket
+env.ASSETS                                             Assets
+env.APP_NAME ("合伙有序")                                  Environment Variable
+env.APP_URL ("https://REPLACE_WITH_YOUR_DOMAIN")       Environment Variable
+env.TZ ("Asia/Shanghai")                               Environment Variable
+
+--dry-run: exiting now.

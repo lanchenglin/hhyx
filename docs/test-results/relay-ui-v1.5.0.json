@@ -1,0 +1,24 @@
+{
+  "scope": "Offline Chromium, real frontend with explicit HTTP doubles; no real relay, Cloudflare, phone device or API key",
+  "passed": 15,
+  "checks": [
+    "320px: relay explanation and masked key, disabled state and no overflow",
+    "320px: save failure is actionable, no password/MFA prompt, key remains masked",
+    "320px: save reuses login, does not test or enable AI, clears key after close",
+    "320px: explicit test consent, one request, useful HTTP error without reauthentication",
+    "320px: supplemental preference also saves without reauthentication",
+    "390px: relay explanation and masked key, disabled state and no overflow",
+    "390px: save failure is actionable, no password/MFA prompt, key remains masked",
+    "390px: save reuses login, does not test or enable AI, clears key after close",
+    "390px: explicit test consent, one request, useful HTTP error without reauthentication",
+    "390px: supplemental preference also saves without reauthentication",
+    "1440px: relay explanation and masked key, disabled state and no overflow",
+    "1440px: save failure is actionable, no password/MFA prompt, key remains masked",
+    "1440px: save reuses login, does not test or enable AI, clears key after close",
+    "1440px: explicit test consent, one request, useful HTTP error without reauthentication",
+    "1440px: supplemental preference also saves without reauthentication"
+  ],
+  "pageErrors": [],
+  "runVersion": "1.5.0",
+  "sourceArtifactFile": "ai-relay-render-v1.4.1.json"
+}

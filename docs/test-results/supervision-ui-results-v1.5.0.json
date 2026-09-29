@@ -1,0 +1,29 @@
+{
+  "scope": "Real Chromium and loopback HTTP, actual Worker source via isolated Node/SQLite adapter; not Cloudflare production or a physical phone",
+  "passed": 18,
+  "checks": [
+    "320px: 真实HTTP登录并进入出资人总览，未对账不显示为正常",
+    "320px: 五个页面无横向溢出，真实数据与导航可用",
+    "320px: 汇报、追加、变更、规则表单可操作；没有客户必填或新增密码弹窗",
+    "390px: 真实HTTP登录并进入出资人总览，未对账不显示为正常",
+    "390px: 五个页面无横向溢出，真实数据与导航可用",
+    "390px: 汇报、追加、变更、规则表单可操作；没有客户必填或新增密码弹窗",
+    "768px: 真实HTTP登录并进入出资人总览，未对账不显示为正常",
+    "768px: 五个页面无横向溢出，真实数据与导航可用",
+    "768px: 汇报、追加、变更、规则表单可操作；没有客户必填或新增密码弹窗",
+    "1440px: 真实HTTP登录并进入出资人总览，未对账不显示为正常",
+    "1440px: 五个页面无横向溢出，真实数据与导航可用",
+    "1440px: 汇报、追加、变更、规则表单可操作；没有客户必填或新增密码弹窗",
+    "真实HTTP：确认已阅只留下阅读记录，不批准阶段、计划或资金",
+    "个人追加分担不勾选时前端阻止；没有自动把项目批准当作个人承诺",
+    "真实HTTP：三个独立账号全部批准追加；只增加预算，不增加现金、不改分配比例",
+    "真实HTTP：另一人验收成果不等于阶段已经全员批准关闭",
+    "真实HTTP：成果验收后仍需三人阶段会签；下一阶段不自动放开",
+    "真实HTTP：异常从原因、处理结果到另一人复核关闭，负责人不能自关"
+  ],
+  "pageErrors": [],
+  "externalModelsCalled": false,
+  "realNotificationsSent": false,
+  "runVersion": "1.5.0",
+  "sourceArtifactFile": "supervision-ui-results-v1.5.0.json"
+}

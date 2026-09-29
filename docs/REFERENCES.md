@@ -63,3 +63,9 @@ https://help.aliyun.com/en/cmn/developer-reference/signature-mechanism
 - Anthropic stop reasons（end_turn / max_tokens）：https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons
 
 此版本按接口返回的明确结束原因决定是否补齐，不从自然语言猜测成功。接口文档不是当前账号/网关兼容性测试，模型与真实延迟仍需部署者验证。
+
+
+## v1.5 实现核对
+
+- Workers Request 重定向行为与敏感头警告：https://developers.cloudflare.com/workers/runtime-apis/request/
+- 本轮通知接口采用 manual 后明确拒绝3xx，不跟随或自动再次发送。业务变更未改变原登录/密码保护。

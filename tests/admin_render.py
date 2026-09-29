@@ -3,7 +3,7 @@ Generate data first with `node tests/admin-fixture.mjs`. No network/model/cloud 
 """
 import json, os, urllib.parse
 from pathlib import Path
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, expect
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/'artifacts'; OUT.mkdir(exist_ok=True)
 fixture=json.loads((OUT/'admin-fixture.json').read_text())
@@ -96,7 +96,7 @@ with sync_playwright() as pw:
         assert d.locator('[name="baseUrl"]').input_value()=='https://api.openai.com/v1'
         if width==390:p.screenshot(path=str(OUT/'admin-390-ai-settings.png'),full_page=True)
         d.locator('[name="key"]').fill('Synthetic-new-Key-123!');close(p)
-        assert p.locator('#modal [name="key"]').input_value()==''
+        expect(p.locator('#modal [name="key"]')).to_have_value('')
         p.locator('[data-action="admin-ai-test"]').click();d=sheet(p,'连接测试')
         assert not d.locator('[name="confirmCost"]').is_checked();d.get_by_role('button',name='发起一次测试').click();d.locator('.field-error').wait_for()
         assert not p.evaluate('writes.some(x=>x.path.endsWith("/ai-settings/test"))');close(p)
@@ -110,7 +110,7 @@ with sync_playwright() as pw:
     d.locator('[name="key"]').fill('Synthetic-config-key-234!');d.get_by_role('button',name='保存配置').click()
     p.wait_for_function('writes.some(x=>x.path==="/api/admin/ai-settings")');p.wait_for_function('!document.querySelector("#modal").open')
     payload=p.evaluate('writes.find(x=>x.path==="/api/admin/ai-settings").body');assert 'inputCentsPerMillion' not in payload and 'outputCentsPerMillion' not in payload and 'outputTokens' not in payload and payload['expectedRevision']==1
-    assert not p.evaluate('writes.some(x=>x.path.endsWith("/ai-settings/test"))');assert p.locator('#modal [name="key"]').input_value()==''
+    assert not p.evaluate('writes.some(x=>x.path.endsWith("/ai-settings/test"))');expect(p.locator('#modal [name="key"]')).to_have_value('')
     p.locator('[data-action="admin-ai-test"]').click();p.locator('#modal [name="confirmCost"]').check();p.locator('#modal').get_by_role('button',name='发起一次测试').click()
     p.wait_for_function('writes.some(x=>x.path.endsWith("/ai-settings/test"))');assert p.evaluate('writes.filter(x=>x.path.endsWith("/ai-settings/test")).length')==1
     assert not p.evaluate('writes.some(x=>x.path==="/api/auth/reauth")')

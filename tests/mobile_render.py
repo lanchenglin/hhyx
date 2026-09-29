@@ -19,7 +19,7 @@ if not (OUT / 'mobile-fixture.json').exists():
 fixture = json.loads((OUT / 'mobile-fixture.json').read_text())
 css = '\n'.join((ROOT / f'public/{name}.css').read_text() for name in ['styles', 'mobile', 'admin'])
 svg = 'data:image/svg+xml,' + urllib.parse.quote((ROOT / 'public/favicon.svg').read_text())
-html = (ROOT / 'public/index.html').read_text().replace('<link rel="stylesheet" href="/styles.css">', '<style>' + css + '</style>').replace('<link rel="stylesheet" href="/mobile.css">', '').replace('<link rel="stylesheet" href="/admin.css">', '').replace('<script type="module" src="/app.js"></script>', '').replace('/favicon.svg', svg)
+html = (ROOT / 'public/index.html').read_text().replace('<link rel="stylesheet" href="/styles.css">', '<style>' + css + '</style>').replace('<link rel="stylesheet" href="/mobile.css">', '').replace('<link rel="stylesheet" href="/supervision.css">', '').replace('<link rel="stylesheet" href="/admin.css">', '').replace('<script type="module" src="/app.js"></script>', '').replace('/favicon.svg', svg)
 from frontend_bundle import frontend_bundle
 code = frontend_bundle(ROOT, svg)
 checks, errors = [], []

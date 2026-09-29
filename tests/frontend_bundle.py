@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 
 def frontend_bundle(root: Path, svg: str = '') -> str:
-    modules = ['ops-ui.js', 'security-ui.js', 'continuity-ui.js', 'admin-ui.js', 'ai-ui.js', 'app.js']
+    modules = ['supervision-ui.js', 'ops-ui.js', 'security-ui.js', 'continuity-ui.js', 'admin-ui.js', 'ai-ui.js', 'app.js']
     parts = []
     for name in modules:
         code = (root / 'public' / name).read_text()

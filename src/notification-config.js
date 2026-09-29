@@ -1,3 +1,4 @@
+import {notificationFetch} from './notification-transport.js';
 import {assert,encrypt,decrypt,text,now,sha} from './util.js';
 import {one} from './store.js';
 export const NOTIFY_CONFIG_KEY='admin_notification_config';
@@ -46,5 +47,5 @@ export async function adminAlert(env,id,title,details,severity='warning'){
  if(!inserted.meta.changes)return;
  const c=await readNotifyConfig(env).catch(()=>null);if(!c?.deliveryEnabled||!c.adminAlertsEnabled||!c.wecomEnabled||!c.wecomEncrypted)return;
  // Operational alarm only; never includes account secrets, project titles or financial data.
- try{const fetcher=env.NOTIFY_TEST_FETCH||fetch;const r=await fetcher(validateWecomURL(decrypt(c.wecomEncrypted,env.CONFIG_ENCRYPTION_KEY)),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({msgtype:'text',text:{content:`【合伙有序·系统告警】${title}\n请管理员登录后台检查。编号 ${sha(id).slice(0,12)}`}}),redirect:'error',signal:AbortSignal.timeout(10000)});const d=await r.json();if(!r.ok||d.errcode!==0)throw Error('refused');}catch{await env.DB.prepare('INSERT OR IGNORE INTO admin_alerts(id,severity,title,details,created_at) VALUES(?,?,?,?,?)').bind('delivery:'+id,'warning','管理告警外发未确认',JSON.stringify({sourceId:id,note:'站内告警已保留；不自动重发'}),now()).run();}
+ try{const fetcher=env.NOTIFY_TEST_FETCH||fetch;const r=await notificationFetch(fetcher,validateWecomURL(decrypt(c.wecomEncrypted,env.CONFIG_ENCRYPTION_KEY)),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({msgtype:'text',text:{content:`【合伙有序·系统告警】${title}\n请管理员登录后台检查。编号 ${sha(id).slice(0,12)}`}}),signal:AbortSignal.timeout(10000)});const d=await r.json();if(!r.ok||d.errcode!==0)throw Error('refused');}catch{await env.DB.prepare('INSERT OR IGNORE INTO admin_alerts(id,severity,title,details,created_at) VALUES(?,?,?,?,?)').bind('delivery:'+id,'warning','管理告警外发未确认',JSON.stringify({sourceId:id,note:'站内告警已保留；不自动重发'}),now()).run();}
 }

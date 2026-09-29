@@ -1,6 +1,6 @@
 {
   "name": "coop-plan",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "private": true,
   "type": "module",
   "description": "合伙有序：多人会签、阶段预算、采购执行、审计留痕与有依据的AI风险分析",
@@ -27,7 +27,8 @@
     "backup:restore-drill": "node scripts/restore-drill.mjs",
     "check:bindings": "node scripts/verify-operations-bindings.mjs",
     "test:lightweight-ui": "node tests/mobile-fixture.mjs && node tests/admin-fixture.mjs && python3 tests/lightweight_ai_render.py",
-    "test:ai-relay-ui": "node tests/admin-fixture.mjs && python3 tests/ai_relay_render.py"
+    "test:ai-relay-ui": "node tests/admin-fixture.mjs && python3 tests/ai_relay_render.py",
+    "test:supervision-ui": "python3 tests/supervision_render.py"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

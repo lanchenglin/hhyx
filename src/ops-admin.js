@@ -1,3 +1,4 @@
+import {notificationFetch} from './notification-transport.js';
 import {assert,AppError,body,json,now,uid,sha,text,decrypt} from './util.js';
 import {one,rows} from './store.js';
 import {siteChange,adminAuditStatement} from './admin.js';
@@ -33,12 +34,12 @@ export async function operationsAdminRoute(req,env,ctx,{user,session,url}){
   const fetcher=env.NOTIFY_TEST_FETCH||fetch;let result;
   if(a.channel==='wecom'){
    assert(c.wecomEnabled&&c.wecomEncrypted,'企业微信尚未配置');assert(a.confirmAudience===true,'请确认接收群已同意接收此测试');
-   try{const r=await fetcher(validateWecomURL(decrypt(c.wecomEncrypted,env.CONFIG_ENCRYPTION_KEY)),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({msgtype:'text',text:{content:'【合伙有序】管理员发起的通知连接测试，不包含任何项目资料。'}}),redirect:'error',signal:AbortSignal.timeout(10000)});const d=await r.json();result={accepted:r.ok&&d.errcode===0,status:r.ok&&d.errcode===0?'accepted':'failed',httpStatus:r.status};}catch{result={accepted:false,status:'uncertain'};}
+   try{const r=await notificationFetch(fetcher,validateWecomURL(decrypt(c.wecomEncrypted,env.CONFIG_ENCRYPTION_KEY)),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({msgtype:'text',text:{content:'【合伙有序】管理员发起的通知连接测试，不包含任何项目资料。'}}),signal:AbortSignal.timeout(10000)});const d=await r.json();result={accepted:r.ok&&d.errcode===0,status:r.ok&&d.errcode===0?'accepted':'failed',httpStatus:r.status};}catch(error){result=error.code==='NOTIFICATION_REDIRECT'?{accepted:false,status:'failed',httpStatus:error.httpStatus}:{accepted:false,status:'uncertain'};}
   }else{
    const n=await resolveNotifyEnv(env);assert(n.ALIYUN_ACCESS_KEY_ID&&n.ALIYUN_ACCESS_KEY_SECRET,'短信尚未配置');assert(user.phone&&user.sms_opt_in,'短信测试仅能发给管理员本人：请先在账号偏好填写手机并同意短信');
    const id='probe:'+uid();assert(await reserveSms(n,id,user.id),'短信额度或个人小时限制已用完',429);
    const params={AccessKeyId:n.ALIYUN_ACCESS_KEY_ID,Action:'SendSms',Version:'2017-05-25',Format:'JSON',RegionId:'cn-hangzhou',SignatureMethod:'HMAC-SHA1',SignatureVersion:'1.0',SignatureNonce:uid(),Timestamp:now().replace(/\.\d{3}Z$/,'Z'),PhoneNumbers:user.phone,SignName:n.ALIYUN_SMS_SIGN_NAME,TemplateCode:n.ALIYUN_SMS_TEMPLATE_CODE,TemplateParam:JSON.stringify({project:'系统测试',title:'管理员连接测试'}),OutId:sha(id).slice(0,32)};
-   try{const r=await fetcher('https://dysmsapi.aliyuncs.com/',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:aliyunSignedParams(params,n.ALIYUN_ACCESS_KEY_SECRET),redirect:'error',signal:AbortSignal.timeout(10000)});const d=await r.json();result={accepted:r.ok&&d.Code==='OK',status:r.ok&&d.Code==='OK'?'accepted':r.status>=500?'uncertain':'failed',httpStatus:r.status};}catch{result={accepted:false,status:'uncertain'};}
+   try{const r=await notificationFetch(fetcher,'https://dysmsapi.aliyuncs.com/',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:aliyunSignedParams(params,n.ALIYUN_ACCESS_KEY_SECRET),signal:AbortSignal.timeout(10000)});const d=await r.json();result={accepted:r.ok&&d.Code==='OK',status:r.ok&&d.Code==='OK'?'accepted':r.status>=500?'uncertain':'failed',httpStatus:r.status};}catch(error){result=error.code==='NOTIFICATION_REDIRECT'?{accepted:false,status:'failed',httpStatus:error.httpStatus}:{accepted:false,status:'uncertain'};}
   }
   await adminAuditStatement(env,user,'notifications.test',a.channel,result).run();return json({...result,message:result.accepted?'服务商已接受测试，不代表接收人已阅读':'未确认发送成功；不自动重试，请核对服务商回执'});
  }

@@ -1,3 +1,4 @@
+import {SUPERVISION_ACTIONS,SUPERVISION_PROPOSALS,supervisionAction,supervisionView,validateSupervisionProposal,applySupervisionProposal,validateFundingVote,assertNewCommitment,validateStageGate,earlyOpenAllowed,supervisionMemberGuard} from './supervision.js';
 import {purchaseAnalysisDecision} from './purchase-analysis.js';
 import {openExit,governanceHash,exitBasis,exitPaid,exitHold,exitProfitHold,exitProfitDistributed,validateExit,applyHandover,verifyExitReady} from './continuity.js';
 // 所有业务状态通过同一 reducer 修改；数据库以项目 revision 做 CAS，保证多名审批人并发时的预算与会签一致。
@@ -5,6 +6,7 @@ import { assert, text, cents, email, date, sha } from './util.js';
 import { validateBrief, validatePolicy, aiConsentValid, aiUsage } from './ai-policy.js';
 
 export const ACTIONS = {
+ ...SUPERVISION_ACTIONS,
  'exit.payment':'登记退出清算实际收付',
  'admin.lifecycle':'管理员调整项目生命周期','admin.member.role':'管理员提议项目成员权限变更',
  'ai.materials':'更新分析补充资料','ai.suspend':'暂停外部AI发送','ai.run.request':'请求AI分析','ai.run.progress':'保存AI补齐进度','ai.run.finish':'记录AI分析结果','ai.review':'记录AI风险处置',
@@ -21,7 +23,7 @@ export const ACTIONS = {
 const RESERVED = new Set(['pending','approved','ordered','received']);
 const CASH_SIGNS = { exit_payment:-1,exit_receipt:1, contribution:1, revenue:1, loan_in:1, receivable_collection:1, refund_in:1, operating_expense:-1, loan_repayment:-1, payable_payment:-1, purchase_payment:-1, distribution:-1 };
 const MANUAL_LEDGER = new Set(['contribution','revenue','loan_in','receivable_collection','refund_in','operating_expense','loan_repayment','payable_payment','cost_of_goods_sold','inventory_writeoff','receivable_revenue','payable_expense']);
-const SIGNIFICANT = new Set(['ownership_transfer','exit_plan','exit_finalize','budget','member_add','member_remove','member_role','profit_rule','terms']);
+const SIGNIFICANT = new Set(['plan_change','funding_request','funding_cancel','ownership_transfer','exit_plan','exit_finalize','budget','member_add','member_remove','member_role','profit_rule','terms']);
 const clone = x => structuredClone(x);
 const activeMembers = p => p.members.filter(m=>m.active);
 export const partners = p => activeMembers(p).filter(m=>m.role==='partner');
@@ -33,7 +35,7 @@ const sum = arr => arr.reduce((s,x)=>s+x,0);
 export const paid = (p,q) => sum(p.ledger.filter(e=>e.kind==='purchase_payment'&&e.purchaseId===q.id).map(e=>e.amountCents));
 export const purchaseTotal = q => sum(q.items.map(i=>i.quantity*i.unitCents));
 const live = p => assert(['active','paused'].includes(p.status),'请先让全体合伙人确认合作基准计划');
-const purchasing = p => { live(p);assert(!openExit(p),'退出清算期间暂停新采购及支出承诺，先完成交接与共同结清',409); assert(p.status==='active','项目已暂停，不能新增采购或形成新支出承诺',409); };
+const purchasing = (p,today) => { live(p);assertNewCommitment(p,today);assert(!openExit(p),'退出清算期间暂停新采购及支出承诺，先完成交接与共同结清',409); assert(p.status==='active','项目已暂停，不能新增采购或形成新支出承诺',409); };
 const proof = v => text(v,'依据/凭证说明',3000);
 const attachmentIds = v => { assert(v==null || (Array.isArray(v)&&v.length<=20&&v.every(x=>typeof x==='string'&&x.length<=100)), '附件列表格式不正确'); return v||[]; };
 function snapshots(p) { const ms=partners(p); assert(ms.length>=2,'合作项目至少需要两名合伙人'); assert(ms.length<=30,'第一版每个项目最多支持30名合伙人'); assert(ms.every(m=>m.userId),'还有合伙人未接受邀请，不能开始会签'); return ms.map(m=>({id:m.id,userId:m.userId,name:m.name,email:m.email})); }
@@ -116,6 +118,7 @@ function allocate(total,ms) {
 }
 function validateRoleChange(p,a){
  const m=getById(p.members,a.memberId,'成员');assert(m.active,'成员已退出');
+ if(a.role==='viewer'||m.role==='partner'&&a.role!=='partner')supervisionMemberGuard(p,m.id);
  assert(['partner','operator','viewer'].includes(a.role),'项目角色不正确');assert(m.role!==a.role,'角色没有变化');
  assert(m.userId!==p.ownerId||a.role==='partner','项目创建人须保留合伙人身份；不能通过降权移除其必签权');
  if(p.status!=='draft'&&m.role==='partner'&&a.role!=='partner'){
@@ -129,12 +132,12 @@ function validateRoleChange(p,a){
  return m;
 }
 export function reduceProject(original, action, actor, ctx) {
- const p=clone(original), a=action.data||{}, at=ctx.at, today=ctx.today||ctx.at.slice(0,10), mid=ctx.adminVerified&&action.type.startsWith('admin.') ? {id:actor.id,name:actor.name} : ['ai.run.finish','ai.run.progress'].includes(action.type)&&ctx.aiSystemVerified ? {id:'system:ai',name:'AI任务服务'} : action.type==='member.join'&&ctx.inviteVerified ? p.members.find(m=>m.id===a.memberId&&m.email===actor.email) : getMember(p,actor), events=[];
+ const p=clone(original), a=action.data||{}, at=ctx.at, today=ctx.today||ctx.at.slice(0,10), mid=action.type==='supervision.sync'&&ctx.supervisionSystemVerified ? {id:'system:supervision',name:'监督调度'} : ctx.adminVerified&&action.type.startsWith('admin.') ? {id:actor.id,name:actor.name} : ['ai.run.finish','ai.run.progress'].includes(action.type)&&ctx.aiSystemVerified ? {id:'system:ai',name:'AI任务服务'} : action.type==='member.join'&&ctx.inviteVerified ? p.members.find(m=>m.id===a.memberId&&m.email===actor.email) : getMember(p,actor), events=[];
  assert(ACTIONS[action.type],'不支持的操作',400);
  assert((p.lifecycle||'active')==='active'||(ctx.adminVerified&&action.type==='admin.lifecycle')||(ctx.aiSystemVerified&&['ai.run.finish','ai.run.progress'].includes(action.type)),'项目已归档或放入回收站，当前只读；请由管理员恢复后再操作',409,'PROJECT_READ_ONLY');
  const exiting=openExit(p);
  if(exiting&&action.type==='admin.member.role')assert(false,'退出清算期间不能变更项目成员角色',409);
- if(exiting&&!action.type.startsWith('admin.')&&!['ai.run.finish','ai.run.progress','ai.review','purchase.read','purchase.comment','purchase.pay','purchase.receive','task.progress','task.accept','ledger.add','ledger.verify','ledger.reverse','exit.payment','attachment.add','project.pause','proposal.submit','proposal.vote','proposal.cancel','channel.update'].includes(action.type))assert(false,'退出清算期间仅处理既有交接、账目和结清，不新增承诺或变更成员',409);
+ if(exiting&&!action.type.startsWith('admin.')&&!['ai.run.finish','ai.run.progress','ai.review','purchase.read','purchase.comment','purchase.pay','purchase.receive','task.progress','task.accept','ledger.add','ledger.verify','ledger.reverse','exit.payment','attachment.add','project.pause','report.submit','report.read','report.review','issue.create','issue.respond','issue.resolve','issue.review','funding.receipt','funding.link','supervision.sync','proposal.submit','proposal.vote','proposal.cancel','channel.update'].includes(action.type))assert(false,'退出清算期间仅处理既有交接、账目和结清，不新增承诺或变更成员',409);
  const notify=(title,body='',severity='info',target='',recipients=null)=>events.push({title,body,severity,target,recipients});
  const requirePartner=()=>partner(p,actor);
  const requireDraft=()=>{ requirePartner(); assert(p.ownerId===actor.id,'筹备期由创建人编辑，生效须全体确认',403); assert(p.status==='draft','正式生效后必须提交共同决策变更'); notBaselinePending(p); };
@@ -210,7 +213,7 @@ export function reduceProject(original, action, actor, ctx) {
   assert(ctx.inviteVerified,'邀请未验证',403); const m=getById(p.members,a.memberId,'成员'); assert(m.active&&m.email===actor.email,'邀请与登录账号不匹配',403); assert(!m.userId||m.userId===actor.id,'该邀请已绑定其他账号',409); m.userId=actor.id; m.name=actor.name; notify('成员已接受邀请',m.name); break;
  }
  case 'task.add': {
-  requirePartner(); assert(p.status!=='completed','项目已结束'); stageFrom(p,a.stageId);
+  requirePartner(); assert(p.status!=='completed','项目已结束'); const targetStage=stageFrom(p,a.stageId);if(p.supervision?.policy?.enabled)assert(targetStage.status!=='completed','已验收阶段不能增加新任务，请安排后续阶段');
   assert(activeMembers(p).some(m=>m.id===a.assigneeId&&m.role!=='viewer'),'负责人无效'); assert(activeMembers(p).some(m=>m.id===a.reviewerId&&m.role!=='viewer'),'验收人无效'); assert(a.assigneeId!==a.reviewerId,'任务负责人和验收人不能相同');
   if(a.aiSource){assert(ctx.aiTaskVerified,'AI任务来源未经校验',403);assert(!p.tasks.some(t=>t.aiSource?.runId===a.aiSource.runId&&t.aiSource?.index===a.aiSource.index),'此建议已建立任务，不能重复创建',409);}
   p.tasks.push({id:ctx.id,...(a.aiSource?{aiSource:a.aiSource}:{}),title:text(a.title,'任务名称',150),description:text(a.description,'任务说明',3000,false),deliverable:text(a.deliverable,'交付成果/标准',2000),stageId:a.stageId,assigneeId:a.assigneeId,reviewerId:a.reviewerId,dueDate:date(a.dueDate,true),status:'todo',updates:[],createdAt:at});
@@ -226,11 +229,16 @@ export function reduceProject(original, action, actor, ctx) {
  case 'project.pause': {requirePartner();live(p);p.status='paused';p.pauseReason=proof(a.reason);notify('项目紧急暂停',p.pauseReason,'critical');break;}
  case 'proposal.submit': {
   requirePartner(); assert(!p.proposals.some(g=>g.status==='pending'),'请先完成或撤回现有共同决策，避免相互冲突',409);
-  const kind=a.kind; assert(['baseline','budget','stage_open','stage_close','member_add','member_remove','profit_rule','terms','resume','task_change','settlement','reconcile','ai_policy','ownership_transfer','exit_plan','exit_finalize','exit_cancel'].includes(kind),'决策类型不支持');
+  const kind=a.kind; assert([...SUPERVISION_PROPOSALS,'baseline','budget','stage_open','stage_close','member_add','member_remove','profit_rule','terms','resume','task_change','settlement','reconcile','ai_policy','ownership_transfer','exit_plan','exit_finalize','exit_cancel'].includes(kind),'决策类型不支持');
   if(exiting)assert(['exit_finalize','exit_cancel'].includes(kind),'退出清算进行中，仅能提出共同结清或无收付撤销',409);
   if(kind==='baseline'){assert(p.status==='draft','基准计划已生效');verifyStages(p.stages,p.settings.totalBudgetCents);validShares(p);assert(p.settings.terms.length>=10,'请填写合作约定（职责、决策权、退出和分配规则）');}
-  else if(kind!=='ai_policy')live(p);
-  const data=clone(a.payload||{}); const signers=snapshots(p);
+  else if(!['ai_policy','supervision_policy'].includes(kind))live(p);
+  let data=clone(a.payload||{}); const signers=snapshots(p);
+  if(SUPERVISION_PROPOSALS.includes(kind))data=validateSupervisionProposal(p,kind,data,{...ctx,today},finance(p));
+  if(kind==='budget'&&p.supervision?.policy?.enabled)assert(data.totalBudgetCents<=p.settings.totalBudgetCents,'提高项目总预算请使用追加投入申请，明确前轮结果和个人分担',409);
+  if(kind==='stage_close')data.reportGate=validateStageGate(p,data.stageId);
+  if(kind==='stage_open')assertNewCommitment(p,today);
+  if(['member_remove','exit_plan'].includes(kind))supervisionMemberGuard(p,data.memberId);
   if(kind==='ownership_transfer'){
    assert(actor.id===p.ownerId,'只有现任项目负责人可提出移交',403);const target=partners(p).find(m=>m.id===data.newOwnerMemberId&&m.userId&&m.userId!==p.ownerId);
    assert(target,'请选择另一位已加入的合伙人接任');data.previousOwnerId=p.ownerId;data.newOwnerId=target.userId;data.handover=text(data.handover,'移交范围、资料与未结责任',5000);data.governanceHash=governanceHash(p);
@@ -256,10 +264,12 @@ export function reduceProject(original, action, actor, ctx) {
   requirePartner();const g=getById(p.proposals,a.id,'决策');if(exiting)assert(['exit_finalize','exit_cancel'].includes(g.kind),'退出清算期间暂停其他共同决策，请先结清或共同撤销退出方案',409);assert(g.status==='pending','本轮决策已结束',409);assert(g.signers.some(s=>s.id===mid.id),'你不在本轮必签名单中',403);assert(['approve','reject'].includes(a.decision),'请同意或反对');assert(!g.decisions[mid.id],'你已提交本轮意见，不能覆盖历史决定',409);
   if(g.kind==='ownership_transfer'&&mid.userId===g.payload.newOwnerId&&a.decision==='approve')assert(a.acceptOwnership===true,'接任人须明确勾选接受项目所有权和交接职责');
   if(g.kind==='exit_plan'&&mid.id===g.payload.memberId&&a.decision==='approve')assert(a.acceptExit===true,'退出者本人须明确接受清算与后续责任安排');
-  g.decisions[mid.id]={decision:a.decision,at,note:text(a.note,'决定说明',2000,a.decision==='reject')};
+  validateFundingVote(p,g,mid,a);
+  g.decisions[mid.id]={decision:a.decision,at,...(g.kind==='funding_request'?{acceptFunding:a.acceptFunding===true}:{}),note:text(a.note,'决定说明',2000,a.decision==='reject')};
   if(a.decision==='reject'){g.status='rejected';notify('共同决策未通过',g.reason,'warning','decisions');break;}
   if(g.signers.every(s=>g.decisions[s.id]?.decision==='approve')){
    const d=g.payload;
+   if(SUPERVISION_PROPOSALS.includes(g.kind))applySupervisionProposal(p,g,{...ctx,today},finance(p));
    if(g.kind==='ownership_transfer'){
     assert(p.ownerId===d.previousOwnerId&&governanceHash(p)===d.governanceHash,'移交期间负责人或成员已变化，请重新提议',409);
     p.originalCreatorId ||= p.ownerId;p.ownershipHistory ||= [];p.ownershipHistory.push({at,proposalId:g.id,from:p.ownerId,to:d.newOwnerId,handover:d.handover});p.ownerId=d.newOwnerId;
@@ -271,7 +281,7 @@ export function reduceProject(original, action, actor, ctx) {
    }
    if(g.kind==='exit_finalize'){
     const plan=(p.exits||[]).find(x=>x.id===d.exitId);assert(exitBasis(p)===d.basisHash,'最终会签期间资料变化，请重新发起结清',409);verifyExitReady(p,plan,finance(p));
-    const leaving=getById(p.members,plan.memberId,'退出成员');leaving.active=false;leaving.removedAt=at;leaving.shareBps=0;for(const m of partners(p))m.shareBps=plan.shares[m.id];
+    supervisionMemberGuard(p,plan.memberId);const leaving=getById(p.members,plan.memberId,'退出成员');leaving.active=false;leaving.removedAt=at;leaving.shareBps=0;for(const m of partners(p))m.shareBps=plan.shares[m.id];
     plan.status='completed';plan.completedAt=at;plan.finalProposalId=g.id;plan.confirmation=d.confirmation;
    }
    if(g.kind==='exit_cancel'){const plan=openExit(p);assert(plan&&exitPaid(p,plan.id)===0&&exitBasis(p)===d.basisHash,'清算已有收付或资料变化，不能直接撤销',409);plan.status='cancelled';plan.cancelledAt=at;}
@@ -281,11 +291,11 @@ export function reduceProject(original, action, actor, ctx) {
     assert(d.totalBudgetCents>=finance(p).budgetUsed,'新总预算低于当前采购承诺与已发生支出');
     for(const s of p.stages){const used=sum(p.purchases.filter(q=>q.stageId===s.id&&RESERVED.has(q.status)).map(purchaseTotal));assert(d.stageBudgets[s.id]>=used,'新阶段预算低于已有采购承诺');s.budgetCents=d.stageBudgets[s.id];}p.settings.totalBudgetCents=d.totalBudgetCents;p.settings.minReserveCents=d.minReserveCents;
    }
-   if(g.kind==='stage_open'){const s=stageFrom(p,d.stageId),i=p.stages.indexOf(s);assert(s.status==='locked','阶段已开放');assert(i===0||p.stages[i-1].status==='completed','必须先验收前一阶段，不能跳过验证直接扩大投入');s.status='open';}
-   if(g.kind==='stage_close'){const s=stageFrom(p,d.stageId);assert(s.status==='open','仅可验收开放阶段');assert(p.tasks.filter(t=>t.stageId===s.id).every(t=>t.status==='done'),'本阶段还有未验收任务');assert(!p.purchases.some(q=>q.stageId===s.id&&['pending','approved','ordered'].includes(q.status)),'本阶段还有未完成采购');s.status='completed';s.evidence=d.evidence;}
+   if(g.kind==='stage_open'){assertNewCommitment(p,today);const s=stageFrom(p,d.stageId),i=p.stages.indexOf(s);assert(s.status==='locked','阶段已开放');const exception=earlyOpenAllowed(p,s.id);assert(i===0||p.stages[i-1].status==='completed'||exception,'必须先验收前一阶段；提前开放须另行提交含风险说明的计划变更');if(exception){exception.consumedAt=at;s.earlyOpenProposalId=exception.id;}s.status='open';}
+   if(g.kind==='stage_close'){const gate=validateStageGate(p,d.stageId);assert(!gate||gate.reportId===d.reportGate?.reportId&&gate.basisHash===d.reportGate?.basisHash,'阶段会签期间成果依据已变化，请重新提交',409);const s=stageFrom(p,d.stageId);assert(s.status==='open','仅可验收开放阶段');assert(p.tasks.filter(t=>t.stageId===s.id).every(t=>t.status==='done'),'本阶段还有未验收任务');assert(!p.purchases.some(q=>q.stageId===s.id&&['pending','approved','ordered'].includes(q.status)),'本阶段还有未完成采购');s.status='completed';s.evidence=d.evidence;if(gate)s.acceptedReportId=gate.reportId;}
    if(g.kind==='member_add')p.members.push(d.member);
    if(g.kind==='member_role'){const m=validateRoleChange(p,d);m.role=d.role;if(d.role!=='partner')m.shareBps=0;}
-   if(g.kind==='member_remove'){const m=getById(p.members,d.memberId,'成员');assert(m.userId!==p.ownerId&&(m.role!=='partner'||(m.shareBps===0&&partners(p).length>2))&&!p.tasks.some(t=>t.status!=='done'&&(t.assigneeId===m.id||t.reviewerId===m.id))&&!p.purchases.some(q=>!['received','cancelled'].includes(q.status)&&(q.executorId===m.id||q.receiverId===m.id))&&!p.settlements.some(z=>z.status==='approved'&&z.allocations.some(x=>x.memberId===m.id&&x.paidCents<x.amountCents)),'退出期间职责或未结事项已变化，请重新核对',409);m.active=false;m.removedAt=at;}
+   if(g.kind==='member_remove'){supervisionMemberGuard(p,d.memberId);const m=getById(p.members,d.memberId,'成员');assert(m.userId!==p.ownerId&&(m.role!=='partner'||(m.shareBps===0&&partners(p).length>2))&&!p.tasks.some(t=>t.status!=='done'&&(t.assigneeId===m.id||t.reviewerId===m.id))&&!p.purchases.some(q=>!['received','cancelled'].includes(q.status)&&(q.executorId===m.id||q.receiverId===m.id))&&!p.settlements.some(z=>z.status==='approved'&&z.allocations.some(x=>x.memberId===m.id&&x.paidCents<x.amountCents)),'退出期间职责或未结事项已变化，请重新核对',409);m.active=false;m.removedAt=at;}
    if(g.kind==='profit_rule')for(const m of partners(p))m.shareBps=d.shares[m.id];
    if(g.kind==='terms')p.settings.terms=d.terms;
    if(g.kind==='resume'){assert(p.status==='paused','项目并未暂停');p.status='active';p.pauseReason='';}
@@ -298,14 +308,14 @@ export function reduceProject(original, action, actor, ctx) {
   }else notify('共同决策新增会签意见',`${mid.name}已确认`,'info','decisions');break;
  }
  case 'purchase.save': {
-  canWork(p,actor);purchasing(p);const q=purchaseInput(p,a,a.id||ctx.id);assert(q.expiresAt>=today,'审批有效期不能早于今天');
+  canWork(p,actor);purchasing(p,today);const q=purchaseInput(p,a,a.id||ctx.id);assert(q.expiresAt>=today,'审批有效期不能早于今天');
   const old=a.id?getById(p.purchases,a.id,'采购单'):null;
   if(old){assert(!old.order,'已形成采购承诺后不能改写原单；实际差异另行记录并决策',409);assert(old.creatorId===mid.id,'只有发起人可修订采购单',403);assert(old.status!=='cancelled','已撤销采购不能直接修改');
    const history=[...old.history,purchaseArchive(old,at,'关键内容修订，旧会签失效')];Object.assign(old,q,{version:old.version+1,status:'draft',signers:[],decisions:{},readBy:{},history,updatedAt:at});notify('采购内容已修改，旧会签失效',q.title,'warning',`purchase:${q.id}`);
   }else p.purchases.push({...q,version:1,status:'draft',creatorId:mid.id,createdAt:at,updatedAt:at,signers:[],decisions:{},readBy:{},history:[],comments:[],order:null,receipts:[]});break;
  }
  case 'purchase.submit': {
-  canWork(p,actor);purchasing(p);const q=getById(p.purchases,a.id,'采购单');assert(q.creatorId===mid.id,'只有发起人可提交',403);assert(['draft','rejected'].includes(q.status),'当前状态不可提交');assert(q.expiresAt>=today,'采购申请已过有效期，请修改');budgetCheck(p,q);
+  canWork(p,actor);purchasing(p,today);const q=getById(p.purchases,a.id,'采购单');assert(q.creatorId===mid.id,'只有发起人可提交',403);assert(['draft','rejected'].includes(q.status),'当前状态不可提交');assert(q.expiresAt>=today,'采购申请已过有效期，请修改');budgetCheck(p,q);
   if(q.status==='rejected'){q.history.push(purchaseArchive(q,at,'反对后重新提交'));q.version++;}
   q.status='pending';q.signers=snapshots(p);q.decisions={};q.readBy={};q.submittedAt=at;q.ruleSnapshot={approvalRule:'all_partners',memberIds:q.signers.map(s=>s.id)};
   const similar=p.purchases.filter(x=>x.id!==q.id&&RESERVED.has(x.status)&&x.supplier===q.supplier&&x.stageId===q.stageId);q.splitWarning=similar.length?`同阶段同供应商已有${similar.length}笔申请/采购，请复核是否拆单。`:'';
@@ -319,13 +329,13 @@ export function reduceProject(original, action, actor, ctx) {
   assert(!q.decisions[mid.id]||q.decisions[mid.id].decision==='needs_info','已经表态不能覆盖，请通过修订新版本重审',409);const note=text(a.note,'表态说明',2000,a.decision!=='approve');
   if(q.decisions[mid.id])q.comments.push({at,memberId:mid.id,text:`原补充要求：${q.decisions[mid.id].note}`});q.decisions[mid.id]={decision:a.decision,note,at};q.readBy[mid.id]=at;
   if(a.decision==='reject'){q.status='rejected';notify('采购会签未通过',`${q.title}：${note}`,'warning',`purchase:${q.id}`);}
-  else if(q.signers.every(s=>q.decisions[s.id]?.decision==='approve')){purchasing(p);budgetCheck(p,q);q.status='approved';q.approvedAt=at;notify('采购已全员批准',`${q.title}，仅可按当前版本执行`,'info',`purchase:${q.id}`);}
+  else if(q.signers.every(s=>q.decisions[s.id]?.decision==='approve')){purchasing(p,today);budgetCheck(p,q);q.status='approved';q.approvedAt=at;notify('采购已全员批准',`${q.title}，仅可按当前版本执行`,'info',`purchase:${q.id}`);}
   else notify(a.decision==='needs_info'?'采购需要补充说明':'采购新增会签意见',`${q.title}：${mid.name}${a.decision==='approve'?'已同意':'要求补充'}`,'info',`purchase:${q.id}`);break;
  }
  case 'purchase.comment': {canWork(p,actor);const q=getById(p.purchases,a.id,'采购单');q.comments.push({at,memberId:mid.id,text:proof(a.text),attachments:attachmentIds(a.attachments)});notify('采购讨论有新补充',q.title,'info',`purchase:${q.id}`);break;}
  case 'purchase.cancel': {requirePartner();const q=getById(p.purchases,a.id,'采购单');assert(!q.order&&!['received','cancelled'].includes(q.status),'已执行采购不能通过撤销掩盖事实');q.status='cancelled';q.cancelReason=proof(a.reason);notify('未执行采购已撤销',`${q.title}：${q.cancelReason}`,'warning',`purchase:${q.id}`);break;}
  case 'purchase.order': {
-  canWork(p,actor);purchasing(p);const q=getById(p.purchases,a.id,'采购单');assert(q.executorId===mid.id,'仅指定执行人可登记下单',403);assert(q.status==='approved','全员批准前不允许下单',409);assert(q.version===a.version,'版本不一致',409);assert(q.expiresAt>=today,'批准已过有效期，请重新审批',409);budgetCheck(p,q);
+  canWork(p,actor);purchasing(p,today);const q=getById(p.purchases,a.id,'采购单');assert(q.executorId===mid.id,'仅指定执行人可登记下单',403);assert(q.status==='approved','全员批准前不允许下单',409);assert(q.version===a.version,'版本不一致',409);assert(q.expiresAt>=today,'批准已过有效期，请重新审批',409);budgetCheck(p,q);
   assert(a.payee===q.payee,'实际收款对象与批准内容不符，请重审',409);q.order={at,by:mid.id,reference:proof(a.reference),attachments:attachmentIds(a.attachments)};q.status='ordered';notify('已按批准内容登记下单',q.title,'info',`purchase:${q.id}`);break;
  }
  case 'purchase.pay': {
@@ -349,7 +359,7 @@ export function reduceProject(original, action, actor, ctx) {
   requirePartner();const e=getById(p.ledger,a.id,'账目');assert(!e.verifiedBy,'该账目已复核',409);assert(e.actorId!==mid.id,'不能复核自己登记的账目',403);e.verifiedBy=mid.id;e.verifiedAt=at;e.verifyNote=proof(a.note);notify('账目已独立复核',e.description,'info','finance');break;
  }
  case 'ledger.reverse': {
-  requirePartner();const e=getById(p.ledger,a.id,'原账目');assert(e.verifiedBy,'请先确认原账目再提交冲销');assert(!['purchase_payment','distribution','exit_payment','exit_receipt'].includes(e.kind),'采购/分红实付不支持直接冲销；真实退款请另行登记并对账');assert(!e.reversesId&&!p.ledger.some(x=>x.reversesId===e.id),'不能重复冲销');addEntry({kind:e.kind,amountCents:-e.amountCents,description:`冲销：${e.description}`,evidence:proof(a.evidence),attachments:attachmentIds(a.attachments),reversesId:e.id,unauthorized:false,stageId:e.stageId||null});notify('账目更正待独立复核',e.description,'warning','finance');break;
+  requirePartner();const e=getById(p.ledger,a.id,'原账目');assert(e.verifiedBy,'请先确认原账目再提交冲销');assert(!['purchase_payment','distribution','exit_payment','exit_receipt'].includes(e.kind),'采购/分红实付不支持直接冲销；真实退款请另行登记并对账');assert(!e.reversesId&&!p.ledger.some(x=>x.reversesId===e.id),'不能重复冲销');addEntry({kind:e.kind,amountCents:-e.amountCents,description:`冲销：${e.description}`,evidence:proof(a.evidence),attachments:attachmentIds(a.attachments),reversesId:e.id,...(e.fundingId?{fundingId:e.fundingId,fundingMemberId:e.fundingMemberId}:{}),unauthorized:false,stageId:e.stageId||null});notify('账目更正待独立复核',e.description,'warning','finance');break;
  }
  case 'exit.payment': {
   requirePartner();const plan=(p.exits||[]).find(x=>x.id===a.id);assert(plan?.status==='settling','退出方案尚未批准或已经结清',409);
@@ -365,7 +375,7 @@ export function reduceProject(original, action, actor, ctx) {
  case 'invite.create': {requirePartner();assert(ctx.inviteCreateVerified,'邀请未校验',403);const m=getById(p.members,a.memberId,'成员');assert(m.active&&!m.userId,'该成员已加入或已退出');break;}
  case 'attachment.add': {canWork(p,actor);assert(ctx.attachmentVerified,'文件未核验',403);assert(!p.attachments.some(x=>x.id===a.file.id),'附件已归档');p.attachments.push(a.file);break;}
  case 'channel.update': {requirePartner();assert(ctx.channelVerified,'通知配置未经服务端验证',403);notify('项目通知渠道已调整','通知只用于提醒，不替代正式会签','warning','notifications');break;}
- default: assert(false,'未实现的操作');
+ default: if(SUPERVISION_ACTIONS[action.type])supervisionAction(p,action.type,a,{...ctx,today},{mid,actor,financial:finance(p),notify,addEntry});else assert(false,'未实现的操作');
  }
  // 附件引用必须来自该项目；不得靠猜测对象 ID 读取他人凭证。
  function inspectAttachments(v){if(!v||typeof v!=='object')return;for(const [k,x] of Object.entries(v)){if(k==='attachments'&&Array.isArray(x)&&x.every(y=>typeof y==='string'))for(const id of x)assert(p.attachments.some(f=>f.id===id),'附件不属于该项目或尚未上传');else if(k!=='history'&&k!=='file')inspectAttachments(x);}}
@@ -373,4 +383,4 @@ export function reduceProject(original, action, actor, ctx) {
  assert(new TextEncoder().encode(JSON.stringify(p)).length<=1400000,'该项目记录接近第一版容量上限，请导出归档并新建下一期项目',409);
  return {state:p,events,summary:ACTIONS[action.type]};
 }
-export function projectView(p,actor) {const member=getMember(p,actor);return {...p,purchases:p.purchases.map(q=>({...q,analysisAssessment:purchaseAnalysisDecision(p,q)})),currentMemberId:member.id,finance:finance(p)};}
+export function projectView(p,actor) {const member=getMember(p,actor);return {...p,purchases:p.purchases.map(q=>({...q,analysisAssessment:purchaseAnalysisDecision(p,q)})),currentMemberId:member.id,finance:finance(p),supervisionView:supervisionView(p,actor,finance(p))};}

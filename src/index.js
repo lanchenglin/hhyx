@@ -1,3 +1,4 @@
+import {scheduledSupervision} from './supervision-scheduler.js';
 import {scheduledBackups} from './backups.js';
 import {readNotifyConfig,resolveNotifyEnv,adminAlert} from './notification-config.js';
 import {mfaRoute,requireFactor,consumeFactor,mfaEnabled,requireFreshFactor} from './mfa.js';
@@ -11,7 +12,7 @@ import { aiRoute, autoAnalysis, processAiJobs } from './ai.js';
 import { validateWecom, kick, scheduled, deliverOne } from './notifications.js';
 
 const SENSITIVE = new Set(['exit.payment','proposal.vote','purchase.vote','purchase.order','purchase.pay','ledger.verify','ledger.reverse','project.pause','settlement.pay','ai.suspend']);
-const INTERNAL = new Set(['admin.lifecycle','admin.member.role','member.join','attachment.add','channel.update','invite.create','ai.run.request','ai.run.progress','ai.run.finish','ai.review']);
+const INTERNAL = new Set(['supervision.sync','admin.lifecycle','admin.member.role','member.join','attachment.add','channel.update','invite.create','ai.run.request','ai.run.progress','ai.run.finish','ai.review']);
 const MIME = new Set(['application/pdf','image/png','image/jpeg','image/webp','text/plain','text/csv','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
 const MAX_FILE=10*1024*1024;
 const keyOf=req=>req.headers.get('x-idempotency-key');
@@ -24,7 +25,7 @@ async function handle(req,env,ctx){
  if(!path.startsWith('/api/'))return env.ASSETS.fetch(req);
  if(method==='OPTIONS')return new Response(null,{status:405});
  if(!['GET','HEAD'].includes(method))originCheck(req,env);
- if(path==='/api/health'&&method==='GET')return json({ok:true,service:'coop-plan',version:'1.3.0'});
+ if(path==='/api/health'&&method==='GET')return json({ok:true,service:'coop-plan',version:'1.5.0'});
  if((path==='/api/auth/status'&&method==='GET')||(path==='/api/auth/login'&&method==='POST'))await ensureInitialAdmin(env);
  if(path==='/api/auth/status'&&method==='GET')return json({initialized:!!await one(env,"SELECT value FROM settings WHERE key='bootstrapped'")});
  if(['/api/auth/bootstrap','/api/auth/login','/api/auth/accept'].includes(path)&&method==='POST') {
@@ -148,7 +149,7 @@ function secure(response,req) {
 export default {
  async fetch(req,env,ctx){try{return secure(await handle(req,env,ctx),req);}catch(e){if(e instanceof AppError)return secure(json({error:e.message,code:e.code},e.status),req);const id=uid();console.error('request_failed',id,e?.stack||e);return secure(json({error:'操作未完成，请刷新后重试或联系管理员',code:'INTERNAL_ERROR',requestId:id},500),req);}},
  async scheduled(controller,env,ctx){
-  const failures=[];for(const [name,job] of [['notifications',scheduled],['ai',processAiJobs],['backups',scheduledBackups]])try{await job(env);}catch(error){failures.push(name);await adminAlert(env,'schedule:'+name+':'+now().slice(0,10),'定时任务执行异常',{task:name,note:'请检查部署日志、绑定与配额'}).catch(()=>{});}
+  const failures=[];for(const [name,job] of [['supervision',scheduledSupervision],['notifications',scheduled],['ai',processAiJobs],['backups',scheduledBackups]])try{await job(env);}catch(error){failures.push(name);await adminAlert(env,'schedule:'+name+':'+now().slice(0,10),'定时任务执行异常',{task:name,note:'请检查部署日志、绑定与配额'}).catch(()=>{});}
   if(failures.length)throw new Error('Scheduled subsystems failed: '+failures.join(','));
  },
  async queue(batch,env,ctx){for(const msg of batch.messages){try{await deliverOne(env,msg.body.id);msg.ack();}catch{msg.retry({delaySeconds:60});}}}

@@ -93,3 +93,8 @@ python tests/browser_render.py
 
 
 当前v1.4实际检查和云端待验收以 `ACCEPTANCE_V1_4.md` 为准；其他版本数字仅是历史记录。
+
+
+## v1.5 最新验收
+
+监督、追加投入和阶段成果的实际验证范围见 `ACCEPTANCE_V1_5.md`。本轮新增真实本地HTTP浏览器流程与Wrangler dry-run，不能将此前离线结果或本次本地结果说成生产已部署。
