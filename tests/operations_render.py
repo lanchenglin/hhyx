@@ -3,6 +3,7 @@ No real credentials, authenticator device, browser network E2E or cloud services
 """
 import json, os, urllib.parse
 from pathlib import Path
+from navigation_helpers import click_project_tab, reveal_sidebar_control
 from playwright.sync_api import sync_playwright
 from frontend_bundle import frontend_bundle
 ROOT=Path(__file__).resolve().parents[1]; OUT=ROOT/'artifacts';OUT.mkdir(exist_ok=True)
@@ -48,8 +49,7 @@ def mount(b,w,kind='admin'):
  c=b.new_context(viewport={'width':w,'height':844 if w<760 else 1000},is_mobile=w<760,has_touch=w<760);p=c.new_page();p.set_default_timeout(6000);p.on('pageerror',lambda e:errors.append(str(e)));p.route('**/*',lambda route:route.abort());p.set_content(html);p.evaluate(MOCK,{'f':f,'kind':kind});p.add_script_tag(content=code,type='module');p.wait_for_selector('#mfa-login-form' if kind=='partial' else '.app-shell');return c,p
 
 def sidebar(p,selector):
- if not p.locator(selector).is_visible():p.locator('[data-action="menu"]').click()
- p.locator(selector).click()
+ reveal_sidebar_control(p,selector).click()
 def admin_tab(p,name):
  if not p.locator('.admin-tabs').count():sidebar(p,'[data-action="admin-open"]')
  p.locator(f'[data-action="admin-tab"][data-section="{name}"]').click();p.wait_for_timeout(60)

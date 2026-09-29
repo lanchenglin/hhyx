@@ -9,6 +9,7 @@ import os
 import pathlib
 import subprocess
 import urllib.parse
+from navigation_helpers import click_project_tab, reveal_sidebar_control
 from playwright.sync_api import sync_playwright
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -61,9 +62,7 @@ def mount(browser, width, height=844, data=None):
     return context,page
 
 def navigate(page, tab):
-    if not page.locator(f'.nav [data-tab={tab}]').is_visible():
-        page.locator('[data-action=menu]').click()
-    page.locator(f'.nav [data-tab={tab}]').click()
+    click_project_tab(page, tab)
     page.wait_for_timeout(40)
 
 def no_overflow(page, name):

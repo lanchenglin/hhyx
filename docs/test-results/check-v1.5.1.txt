@@ -1,0 +1,3 @@
+npm notice run coop-plan@1.5.1 check
+npm notice run node scripts/check.mjs
+语法检查通过：62 个 JavaScript 文件；Workers D1/R2 绑定声明完整。

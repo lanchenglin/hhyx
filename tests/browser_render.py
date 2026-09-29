@@ -3,6 +3,7 @@
 当前执行环境的托管 Chromium 禁止访问 localhost，不修改或绕过该策略。
 """
 import json, pathlib, os, urllib.parse
+from navigation_helpers import click_project_tab, reveal_sidebar_control
 from playwright.sync_api import sync_playwright
 ROOT=pathlib.Path(__file__).resolve().parents[1];OUT=ROOT/'artifacts';OUT.mkdir(exist_ok=True)
 fixture=json.loads((OUT/'visual-fixture.json').read_text())
@@ -23,17 +24,17 @@ with sync_playwright() as pw:
     checks.append('桌面项目总览渲染（来自真实本地后端演示数据）')
     page.screenshot(path=str(OUT/'desktop-overview.png'),full_page=True)
     for tab,heading in [('plan','阶段与合作计划'),('tasks','分工与任务'),('purchases','采购与多人会签'),('decisions','共同决策'),('finance','财务与结算'),('members','合作成员与项目资料'),('audit','审计记录'),('notifications','通知与待办提醒')]:
-        page.locator(f'.nav [data-tab={tab}]').click()
+        click_project_tab(page,tab)
         page.wait_for_function('(h)=>document.querySelector("h1")?.textContent===h',arg=heading)
         assert page.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'),heading
         checks.append('桌面导航与布局：'+heading)
-    page.locator('.nav [data-tab=purchases]').click()
+    click_project_tab(page,'purchases')
     page.locator('[data-action=purchase-open]').filter(has_text='第二批').click()
     assert '第二批' in page.locator('h1').inner_text()
     assert page.get_by_text('尚未确认已阅').count()>0
     page.screenshot(path=str(OUT/'desktop-purchase.png'),full_page=True)
     checks.append('采购详情、冻结三人名单、2/3意见与未阅区分')
-    page.locator('.nav [data-tab=purchases]').click()
+    click_project_tab(page,'purchases')
     page.locator('[data-action=new-purchase]').click()
     assert page.locator('#dialog-form input[name=title]').count()==1, {'toast':page.locator('#toast').inner_text(),'errors':errors,'dialog':page.locator('#modal').inner_html()}
     assert page.locator('#item-rows .repeat-row').count()==1
@@ -41,16 +42,16 @@ with sync_playwright() as pw:
     assert page.locator('#item-rows .repeat-row').count()==2
     checks.append('新建采购表单与动态商品行')
     page.locator('[data-modal-close]').first.click()
-    page.locator('.nav [data-tab=tasks]').click();page.locator('[data-action=new-task]').click()
+    click_project_tab(page,'tasks');page.locator('[data-action=new-task]').click()
     assert page.locator('#dialog-form select[name=assigneeId]').input_value()!=page.locator('#dialog-form select[name=reviewerId]').input_value()
     checks.append('任务表单默认使用不同的负责人和验收人')
     page.locator('[data-modal-close]').first.click()
     page.set_viewport_size({'width':390,'height':844})
-    page.locator('[data-action=menu]').click();page.locator('.nav [data-tab=overview]').click()
+    page.locator('[data-action=menu]').click();click_project_tab(page,'overview')
     assert page.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1'), page.evaluate('[...document.querySelectorAll("body *")].map(e=>({tag:e.tagName,cls:e.className,w:e.getBoundingClientRect().width,right:e.getBoundingClientRect().right})).filter(e=>e.right>391)')
     page.screenshot(path=str(OUT/'mobile-overview.png'),full_page=True)
     checks.append('390px 手机看板与菜单，页面无横向溢出')
-    page.locator('[data-action=menu]').click();page.locator('.nav [data-tab=purchases]').click()
+    page.locator('[data-action=menu]').click();click_project_tab(page,'purchases')
     page.locator('[data-action=purchase-open]').filter(has_text='第二批').click()
     assert page.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1')
     page.screenshot(path=str(OUT/'mobile-purchase.png'),full_page=True)

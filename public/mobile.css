@@ -160,3 +160,82 @@ button:focus-visible, a:focus-visible, summary:focus-visible, .table-wrap:focus-
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0s !important; }
 }
+
+
+/* v1.5.1: grouped workspace navigation. All routes remain accessible. */
+.sidebar {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  padding: 22px 14px 16px;
+  gap: 18px;
+}
+.sidebar > .brand, .sidebar > .project-picker, .sidebar > .sidebar-footer { flex-shrink: 0; }
+.sidebar .brand { padding-left: 5px; }
+.sidebar .brand span { font-size: 9px; letter-spacing: .7px; }
+.sidebar .brand strong { font-size: 18px; }
+.sidebar .brand img { width: 34px; height: 34px; }
+.sidebar .nav-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #526f64 transparent;
+  margin: 0 -4px;
+  padding: 3px 4px 8px;
+  scroll-padding-block: 8px;
+}
+.sidebar .nav { display: grid; gap: 5px; }
+.sidebar .nav-group { margin: 0; padding: 0; border: 0; border-radius: 10px; background: transparent; }
+.sidebar .nav-group-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 10px 11px;
+  list-style: none;
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 550;
+  color: #ccddd4;
+  user-select: none;
+}
+.sidebar .nav-group-heading::-webkit-details-marker { display: none; }
+.sidebar .nav-group-heading::marker { content: ''; }
+.sidebar .nav-group-heading:hover { background: #26483d; color: #fff; }
+.sidebar .current-section > .nav-group-heading { color: #e5efdc; background: #213e34; }
+.sidebar .nav-group-heading > .icon { width: 18px; height: 18px; flex: 0 0 18px; }
+.sidebar .nav-chevron { margin-left: auto; display: inline-flex; }
+.sidebar .nav-chevron > .icon { width: 13px; height: 13px; color: #95ae9f; }
+.sidebar .nav-group[open] > summary .nav-chevron { transform: rotate(90deg); }
+.sidebar .nav-group-items { display: grid; gap: 3px; margin: 3px 0 6px 17px; padding-left: 7px; border-left: 1px solid #3b5748; }
+.sidebar .nav button { width: 100%; min-height: 44px; gap: 8px; padding: 9px 10px; font-size: 13px; line-height: 1.5; }
+.sidebar .nav button > .icon { width: 16px; height: 16px; flex: 0 0 16px; }
+.sidebar .nav-item-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.sidebar .nav .count { flex: 0 0 auto; min-width: 20px; padding: 0 5px; margin-left: 0; }
+.sidebar .nav button:disabled { opacity: .55; cursor: default; }
+.sidebar .nav button:focus-visible, .sidebar summary:focus-visible { outline-color: #b9d79d; outline-offset: -2px; }
+.sidebar .nav-empty { padding: 8px 12px; color: #a4bbae; font-size: 13px; line-height: 1.8; }
+.sidebar .sidebar-footer { margin-top: 0; padding-top: 10px; gap: 10px; }
+.sidebar .nav-utilities { margin: 0; }
+.sidebar .nav-utilities button { padding: 8px 11px; }
+.sidebar .user-line > div { min-width: 0; overflow-wrap: anywhere; }
+.sidebar .user-line strong { font-size: 13px; }
+.sidebar .sidebar-footer > .buttons { gap: 4px 10px; }
+.sidebar .sidebar-footer .link { font-size: 12px; }
+.sidebar .sidebar-footer > small { font-size: 10px; }
+@media (max-width: 760px) {
+  .sidebar.open { gap: 14px; padding: calc(18px + env(safe-area-inset-top)) 14px calc(12px + env(safe-area-inset-bottom)); }
+  .sidebar.open > .nav-scroll { flex-shrink: 1; }
+  .sidebar .nav-group-heading, .sidebar .nav button { min-height: 46px; }
+  .sidebar .project-picker { flex-shrink: 0; }
+  .sidebar .sidebar-footer { gap: 7px; }
+}
+/* On short/landscape viewports, keep EVERY control reachable by scrolling the drawer. */
+@media (max-height: 620px) {
+  .sidebar { overflow-y: auto; }
+  .sidebar .nav-scroll { flex: 0 0 auto; min-height: auto; overflow: visible; }
+}

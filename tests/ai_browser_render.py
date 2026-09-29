@@ -3,6 +3,7 @@ Run `node tests/ai-browser-server.mjs` to produce the local fixture first.
 Managed Chromium blocks localhost (ERR_BLOCKED_BY_ADMINISTRATOR); no policy bypass.
 """
 import json,pathlib,os,urllib.parse
+from navigation_helpers import click_project_tab, reveal_sidebar_control
 from playwright.sync_api import sync_playwright
 root=pathlib.Path(__file__).resolve().parents[1];out=root/'artifacts';out.mkdir(exist_ok=True)
 f=json.loads((out/'ai-visual-fixture.json').read_text())
@@ -16,7 +17,7 @@ with sync_playwright() as pw:
  page.set_content('<html lang="zh-CN"><head><meta charset="utf-8"><style>'+css+'</style></head><body><div id="app"></div><div id="toast"></div><dialog id="modal"></dialog></body></html>')
  page.evaluate('''f=>{window.fx=f;let id=0;if(!crypto.randomUUID)Object.defineProperty(crypto,'randomUUID',{value:()=>`00000000-0000-4000-8000-${String(++id).padStart(12,'0')}`});const store={};Object.defineProperty(window,'localStorage',{value:{getItem:k=>store[k]||null,setItem:(k,v)=>{store[k]=v}}});window.fetch=async(path,opt={})=>{const s=String(path);let d;if(opt.method==='POST'){if(s.endsWith('/ai/preview'))d=f.previews[JSON.parse(opt.body).kind];else return Response.json({error:'离线检查不写入业务数据'},{status:400});}else if(s==='/api/auth/me')d={user:f.user,csrf:f.csrf};else if(s==='/api/projects')d={projects:f.projects};else if(s.startsWith('/api/notifications'))d={items:[]};else if(s.includes('/ai?'))d=f.ai;else if(s.includes('/ai/runs/'))d=f.report;else if(s==='/api/projects/'+f.project.id)d=f.project;else d={};return Response.json(d);};}''',f)
  page.add_script_tag(content=code,type='module');page.wait_for_selector('.app-shell')
- page.locator('.nav [data-tab=ai]').click();page.get_by_role('heading',name='AI分析与风险检查').wait_for()
+ click_project_tab(page,'ai');page.get_by_role('heading',name='AI分析与风险检查').wait_for()
  assert page.locator('[data-action=ai-new]').count()==3;checks.append('桌面三类分析入口及统计渲染')
  assert 'mock-browser-key' not in page.locator('body').inner_text();checks.append('页面不包含模型密钥')
  page.screenshot(path=str(out/'ai-desktop-overview.png'),full_page=True)

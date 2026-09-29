@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import urllib.parse
+from navigation_helpers import click_project_tab, reveal_sidebar_control
 from playwright.sync_api import sync_playwright
 from frontend_bundle import frontend_bundle
 ROOT=Path(__file__).resolve().parents[1]
@@ -60,9 +61,7 @@ def mount(b,w,mode='project'):
  p.set_content(html);p.evaluate(MOCK,{'m':mobile,'a':admin,'mode':mode});p.add_script_tag(content=code,type='module');p.wait_for_selector('.app-shell');return c,p
 
 def nav(p,tab):
- x=p.locator(f'.nav [data-tab="{tab}"]')
- if not x.is_visible():p.locator('[data-action=menu]').click()
- x.click();p.wait_for_timeout(40)
+ click_project_tab(p,tab);p.wait_for_timeout(40)
 
 def sheet(p,name):
  d=p.locator('dialog[open]').last;d.wait_for();g=d.evaluate('d=>{let r=d.getBoundingClientRect(),c=d.querySelector(".modal-content");return [r.left,r.right,innerWidth,c.scrollWidth,c.clientWidth]}')

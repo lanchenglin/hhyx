@@ -4,6 +4,7 @@ Python Playwright + Chromium and Node >=22.16 are required; no tools installed h
 """
 import json, os, subprocess, time
 from pathlib import Path
+from navigation_helpers import click_project_tab, reveal_sidebar_control
 from playwright.sync_api import sync_playwright
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -34,9 +35,7 @@ def login(browser,account,width=390,height=844):
     return ctx,page
 
 def tab(page,name):
-    nav=page.locator('.sidebar')
-    if page.viewport_size['width']<=760 and not nav.locator('[data-tab="'+name+'"]').is_visible():page.locator('[data-action=menu]').click()
-    nav.locator('[data-tab="'+name+'"]').click()
+    click_project_tab(page,name)
     page.wait_for_timeout(60)
 
 def dialog(page,title=None):
